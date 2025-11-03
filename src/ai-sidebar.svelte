@@ -758,11 +758,11 @@
 
     function formatMessage(content: string | MessageContent[]): string {
         let textContent = getMessageText(content);
-        
+
         // 预处理：将 LaTeX 数学公式格式转换为 Markdown 格式
         textContent = textContent.replace(/\\\[(.*?)\\\]/gs, '\n$$$$$1$$$$\n'); // LaTeX 块级数学公式 \[...\] -> $$...$$
         textContent = textContent.replace(/\\\((.*?)\\\)/g, '$$$1$$'); // LaTeX 行内数学公式 \(...\) -> $...$
-        
+
         try {
             // 检查window.Lute是否存在
             if (typeof window !== 'undefined' && (window as any).Lute) {
@@ -866,11 +866,11 @@
     // 初始化 KaTeX
     async function initKatex() {
         if ((window as any).katex) return true;
-        
+
         try {
             // 使用思源的 CDN 加载 KaTeX
             const cdn = Constants.PROTYLE_CDN;
-            
+
             // 添加 KaTeX 样式
             if (!document.getElementById('protyleKatexStyle')) {
                 const link = document.createElement('link');
@@ -879,7 +879,7 @@
                 link.href = `${cdn}/js/katex/katex.min.css`;
                 document.head.appendChild(link);
             }
-            
+
             // 添加 KaTeX 脚本
             if (!document.getElementById('protyleKatexScript')) {
                 await new Promise<void>((resolve, reject) => {
@@ -891,7 +891,7 @@
                     document.head.appendChild(script);
                 });
             }
-            
+
             return (window as any).katex !== undefined && (window as any).katex !== null;
         } catch (error) {
             console.error('Init KaTeX error:', error);
@@ -914,13 +914,14 @@
             const html = katex.renderToString(formula, {
                 throwOnError: false, // 发生错误时不抛出异常
                 displayMode: isBlock, // 使用显示模式（居中显示）
-                strict: (errorCode: string) => errorCode === 'unicodeTextInMathMode' ? 'ignore' : 'warn',
+                strict: (errorCode: string) =>
+                    errorCode === 'unicodeTextInMathMode' ? 'ignore' : 'warn',
                 trust: true,
             });
 
             // 清空原始内容并插入渲染后的内容
             element.innerHTML = html;
-            
+
             // 标记已渲染
             element.setAttribute('data-math-rendered', 'true');
         } catch (error) {
@@ -936,7 +937,7 @@
 
         // 使用 tick 确保 DOM 已更新
         await tick();
-        
+
         try {
             // 处理行内公式和块级公式
             const mathElements = element.querySelectorAll(
@@ -964,7 +965,7 @@
 
                     // 临时设置文本内容用于渲染
                     mathElement.textContent = mathContent;
-                    
+
                     // 渲染公式
                     renderMathBlock(mathElement);
                 } catch (error) {
@@ -1563,12 +1564,12 @@
     // 保存编辑的消息
     function saveEditMessage() {
         if (editingMessageIndex === null) return;
-        
+
         const message = messages[editingMessageIndex];
         message.content = editingMessageContent.trim();
         messages = [...messages];
         hasUnsavedChanges = true;
-        
+
         editingMessageIndex = null;
         editingMessageContent = '';
         isEditDialogOpen = false;
@@ -1596,7 +1597,7 @@
         // 删除从此消息开始的所有后续消息
         messages = messages.slice(0, index);
         hasUnsavedChanges = true;
-        
+
         // 获取最后一条用户消息
         const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
         if (!lastUserMessage) {
@@ -1769,109 +1770,113 @@
     >
         {#each messages as message, index (index)}
             {#if message.role !== 'system'}
-            <div
-                class="ai-message ai-message--{message.role}"
-                on:contextmenu={e => handleContextMenu(e, message.content)}
-            >
-                <div class="ai-message__header">
-                    <span class="ai-message__role">
-                        {message.role === 'user' ? '👤 You' : '🤖 AI'}
-                    </span>
-                </div>
+                <div
+                    class="ai-message ai-message--{message.role}"
+                    on:contextmenu={e => handleContextMenu(e, message.content)}
+                >
+                    <div class="ai-message__header">
+                        <span class="ai-message__role">
+                            {message.role === 'user' ? '👤 You' : '🤖 AI'}
+                        </span>
+                    </div>
 
-                <!-- 显示附件 -->
-                {#if message.attachments && message.attachments.length > 0}
-                    <div class="ai-message__attachments">
-                        {#each message.attachments as attachment}
-                            <div class="ai-message__attachment">
-                                {#if attachment.type === 'image'}
-                                    <img
-                                        src={attachment.data}
-                                        alt={attachment.name}
-                                        class="ai-message__attachment-image"
-                                    />
-                                    <span class="ai-message__attachment-name">
-                                        {attachment.name}
-                                    </span>
-                                {:else}
-                                    <div class="ai-message__attachment-file">
-                                        <svg class="ai-message__attachment-icon">
-                                            <use xlink:href="#iconFile"></use>
-                                        </svg>
+                    <!-- 显示附件 -->
+                    {#if message.attachments && message.attachments.length > 0}
+                        <div class="ai-message__attachments">
+                            {#each message.attachments as attachment}
+                                <div class="ai-message__attachment">
+                                    {#if attachment.type === 'image'}
+                                        <img
+                                            src={attachment.data}
+                                            alt={attachment.name}
+                                            class="ai-message__attachment-image"
+                                        />
                                         <span class="ai-message__attachment-name">
                                             {attachment.name}
                                         </span>
-                                    </div>
-                                {/if}
-                            </div>
-                        {/each}
-                    </div>
-                {/if}
-
-                <!-- 显示思考过程 -->
-                {#if message.role === 'assistant' && message.thinking}
-                    <div class="ai-message__thinking">
-                        <div
-                            class="ai-message__thinking-header"
-                            on:click={() => {
-                                thinkingCollapsed[index] = !thinkingCollapsed[index];
-                            }}
-                        >
-                            <svg
-                                class="ai-message__thinking-icon"
-                                class:collapsed={thinkingCollapsed[index]}
-                            >
-                                <use xlink:href="#iconRight"></use>
-                            </svg>
-                            <span class="ai-message__thinking-title">💭 思考过程</span>
+                                    {:else}
+                                        <div class="ai-message__attachment-file">
+                                            <svg class="ai-message__attachment-icon">
+                                                <use xlink:href="#iconFile"></use>
+                                            </svg>
+                                            <span class="ai-message__attachment-name">
+                                                {attachment.name}
+                                            </span>
+                                        </div>
+                                    {/if}
+                                </div>
+                            {/each}
                         </div>
-                        {#if !thinkingCollapsed[index]}
-                            <div class="ai-message__thinking-content protyle-wysiwyg">
-                                {@html formatMessage(message.thinking)}
-                            </div>
-                        {/if}
-                    </div>
-                {/if}
+                    {/if}
 
-                <!-- 显示模式 -->
-                <div class="ai-message__content protyle-wysiwyg">
-                    {@html formatMessage(message.content)}
-                </div>
-                
-                <!-- 消息操作按钮 -->
-                <div class="ai-message__actions">
-                    <button
-                        class="b3-button b3-button--text ai-message__action"
-                        on:click={() => copyMessage(message.content)}
-                        title={t('aiSidebar.actions.copyMessage')}
-                    >
-                        <svg class="b3-button__icon"><use xlink:href="#iconCopy"></use></svg>
-                    </button>
-                    <button
-                        class="b3-button b3-button--text ai-message__action"
-                        on:click={() => startEditMessage(index)}
-                        title={t('aiSidebar.actions.editMessage')}
-                    >
-                        <svg class="b3-button__icon"><use xlink:href="#iconEdit"></use></svg>
-                    </button>
-                    <button
-                        class="b3-button b3-button--text ai-message__action"
-                        on:click={() => deleteMessage(index)}
-                        title={t('aiSidebar.actions.deleteMessage')}
-                    >
-                        <svg class="b3-button__icon"><use xlink:href="#iconTrashcan"></use></svg>
-                    </button>
-                    {#if message.role === 'assistant'}
+                    <!-- 显示思考过程 -->
+                    {#if message.role === 'assistant' && message.thinking}
+                        <div class="ai-message__thinking">
+                            <div
+                                class="ai-message__thinking-header"
+                                on:click={() => {
+                                    thinkingCollapsed[index] = !thinkingCollapsed[index];
+                                }}
+                            >
+                                <svg
+                                    class="ai-message__thinking-icon"
+                                    class:collapsed={thinkingCollapsed[index]}
+                                >
+                                    <use xlink:href="#iconRight"></use>
+                                </svg>
+                                <span class="ai-message__thinking-title">💭 思考过程</span>
+                            </div>
+                            {#if !thinkingCollapsed[index]}
+                                <div class="ai-message__thinking-content protyle-wysiwyg">
+                                    {@html formatMessage(message.thinking)}
+                                </div>
+                            {/if}
+                        </div>
+                    {/if}
+
+                    <!-- 显示模式 -->
+                    <div class="ai-message__content protyle-wysiwyg">
+                        {@html formatMessage(message.content)}
+                    </div>
+
+                    <!-- 消息操作按钮 -->
+                    <div class="ai-message__actions">
                         <button
                             class="b3-button b3-button--text ai-message__action"
-                            on:click={() => regenerateMessage(index)}
-                            title={t('aiSidebar.actions.regenerate')}
+                            on:click={() => copyMessage(message.content)}
+                            title={t('aiSidebar.actions.copyMessage')}
                         >
-                            <svg class="b3-button__icon"><use xlink:href="#iconRefresh"></use></svg>
+                            <svg class="b3-button__icon"><use xlink:href="#iconCopy"></use></svg>
                         </button>
-                    {/if}
+                        <button
+                            class="b3-button b3-button--text ai-message__action"
+                            on:click={() => startEditMessage(index)}
+                            title={t('aiSidebar.actions.editMessage')}
+                        >
+                            <svg class="b3-button__icon"><use xlink:href="#iconEdit"></use></svg>
+                        </button>
+                        <button
+                            class="b3-button b3-button--text ai-message__action"
+                            on:click={() => deleteMessage(index)}
+                            title={t('aiSidebar.actions.deleteMessage')}
+                        >
+                            <svg class="b3-button__icon">
+                                <use xlink:href="#iconTrashcan"></use>
+                            </svg>
+                        </button>
+                        {#if message.role === 'assistant'}
+                            <button
+                                class="b3-button b3-button--text ai-message__action"
+                                on:click={() => regenerateMessage(index)}
+                                title={t('aiSidebar.actions.regenerate')}
+                            >
+                                <svg class="b3-button__icon">
+                                    <use xlink:href="#iconRefresh"></use>
+                                </svg>
+                            </button>
+                        {/if}
+                    </div>
                 </div>
-            </div>
             {/if}
         {/each}
 
@@ -2276,10 +2281,7 @@
             <div class="ai-sidebar__edit-dialog-content">
                 <div class="ai-sidebar__edit-dialog-header">
                     <h3>{t('aiSidebar.actions.editMessage')}</h3>
-                    <button
-                        class="b3-button b3-button--cancel"
-                        on:click={cancelEditMessage}
-                    >
+                    <button class="b3-button b3-button--cancel" on:click={cancelEditMessage}>
                         <svg class="b3-button__icon"><use xlink:href="#iconClose"></use></svg>
                     </button>
                 </div>
@@ -2292,16 +2294,10 @@
                     ></textarea>
                 </div>
                 <div class="ai-sidebar__edit-dialog-footer">
-                    <button
-                        class="b3-button b3-button--cancel"
-                        on:click={cancelEditMessage}
-                    >
+                    <button class="b3-button b3-button--cancel" on:click={cancelEditMessage}>
                         {t('aiSidebar.actions.cancel')}
                     </button>
-                    <button
-                        class="b3-button b3-button--text"
-                        on:click={saveEditMessage}
-                    >
+                    <button class="b3-button b3-button--text" on:click={saveEditMessage}>
                         {t('aiSidebar.actions.save')}
                     </button>
                 </div>

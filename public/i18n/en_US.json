@@ -123,6 +123,7 @@
         },
         "actions": {
             "copy": "Copy",
+            "copyMessage": "Copy Message",
             "copyAsMarkdown": "Copy as Markdown",
             "copyAllChat": "Copy All Chat",
             "clear": "Clear Chat",
@@ -131,7 +132,12 @@
             "search": "Search and Add Document",
             "send": "Send",
             "stop": "Stop",
-            "scrollToBottom": "Scroll to Bottom"
+            "scrollToBottom": "Scroll to Bottom",
+            "editMessage": "Edit Message",
+            "deleteMessage": "Delete Message",
+            "regenerate": "Regenerate",
+            "save": "Save",
+            "cancel": "Cancel"
         },
         "input": {
             "placeholder": "Type a message... (drag docs, blocks or paste images)"
@@ -197,7 +203,9 @@
             "emptyPromptContent": "Title and content cannot be empty",
             "addBlockFailed": "Failed to add",
             "addBlockContentFailed": "Failed to add block",
-            "openDocumentFailed": "Failed to open document"
+            "openDocumentFailed": "Failed to open document",
+            "generating": "Generating in progress, please wait...",
+            "noUserMessage": "No user message found"
         },
         "success": {
             "copySuccess": "Message copied",
@@ -228,6 +236,10 @@
             "deletePlatform": {
                 "title": "Delete Platform",
                 "message": "Are you sure to delete platform \"{platformName}\"?"
+            },
+            "deleteMessage": {
+                "title": "Delete Message",
+                "message": "Are you sure to delete this message?"
             }
         }
     },
