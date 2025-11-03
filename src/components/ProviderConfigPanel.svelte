@@ -214,7 +214,7 @@
                 type="password"
                 bind:value={config.apiKey}
                 on:change={() => dispatch('change')}
-                placeholder="输入 API Key"
+                placeholder=""
             />
         </div>
 

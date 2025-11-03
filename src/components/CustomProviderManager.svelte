@@ -16,7 +16,7 @@
 
     function addCustomProvider() {
         if (!newProviderName.trim()) {
-            pushErrMsg('请输入平台名称');
+            pushErrMsg('platform.nameRequired');
             return;
         }
 
