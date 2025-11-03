@@ -593,7 +593,7 @@
                     onComplete: (fullText: string) => {
                         // 转换 LaTeX 数学公式格式为 Markdown 格式
                         const convertedText = convertLatexToMarkdown(fullText);
-                        
+
                         const assistantMessage: Message = {
                             role: 'assistant',
                             content: convertedText,
@@ -647,7 +647,7 @@
             if (streamingMessage || streamingThinking) {
                 // 转换 LaTeX 数学公式格式为 Markdown 格式
                 const convertedMessage = convertLatexToMarkdown(streamingMessage);
-                
+
                 const message: Message = {
                     role: 'assistant',
                     content: convertedMessage + '\n\n' + t('aiSidebar.messages.interrupted'),
@@ -769,12 +769,12 @@
             const trimmedFormula = formula.trim();
             return `\n\n$$\n${trimmedFormula}\n$$\n\n`;
         });
-        
+
         // 将 LaTeX 行内数学公式 \(...\) 转换为 $...$
         text = text.replace(/\\\((.*?)\\\)/g, (_match, formula) => {
             return `$${formula}$`;
         });
-        
+
         return text;
     }
 
@@ -1739,7 +1739,7 @@
                     onComplete: (fullText: string) => {
                         // 转换 LaTeX 数学公式格式为 Markdown 格式
                         const convertedText = convertLatexToMarkdown(fullText);
-                        
+
                         const assistantMessage: Message = {
                             role: 'assistant',
                             content: convertedText,
