@@ -217,7 +217,7 @@
                         type="text"
                         bind:value={config.apiKey}
                         on:change={() => dispatch('change')}
-                        placeholder={t('settings.ai.apikey.description')}
+                        placeholder={t('settings.ai.apiKey.description')}
                     />
                 {:else}
                     <input
@@ -225,7 +225,7 @@
                         type="password"
                         bind:value={config.apiKey}
                         on:change={() => dispatch('change')}
-                        placeholder={t('settings.ai.apikey.description')}
+                        placeholder={t('settings.ai.apiKey.description')}
                     />
                 {/if}
                 <button
