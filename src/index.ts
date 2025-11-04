@@ -88,9 +88,13 @@ export default class PluginSample extends Plugin {
         console.log("onunload");
     }
 
-    uninstall() {
+    async uninstall() {
         //当插件被卸载的时候，会自动调用这个函数
         console.log("uninstall");
+        // 删除配置文件
+        await this.removeData(SETTINGS_FILE);
+        await this.removeData("chat-sessions.json");
+        await this.removeData("prompts.json");
     }
 
     /**
