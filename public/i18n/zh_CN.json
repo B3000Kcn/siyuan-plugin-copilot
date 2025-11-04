@@ -64,7 +64,7 @@
         },
         "messageFontSize": {
             "title": "消息字体大小",
-            "description": "调整消息内容的字体大小（8-32px，默认12px）"
+            "description": "调整消息内容的字体大小（默认12px）"
         },
         "textinput": {
             "title": "文本输入",
