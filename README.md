@@ -1,15 +1,15 @@
 # AI Sidebar Plugin
 
-An AI assistant plugin for SiYuan Note, supporting multiple AI platforms, document context integration, and rich features.
+An AI assistant plugin for SiYuan Note, providing rich Q&A and editing features based on SiYuan Note content.
 
 **Note**: Using this plugin requires your own AI platform API keys. The plugin itself does not provide AI services. Please comply with each platform's terms of use and privacy policies.
 
 > For friends who need to use top-tier models like GPT5, Gemini 2.5 Pro, Claude 4.5
 > - Recommend [V3 API website](https://api.gpt.ge/register?aff=fQIZ), very useful, pay-per-use, can use various AI models, can save a lot compared to official APIs. Register with my [invitation link](https://api.gpt.ge/register?aff=fQIZ) to get $0.3 balance reward for trial.
 
-## 📝CHANGELOG
+## 📝 Changelog
 
-see [CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-copilot@main/CHANGELOG.md)
+See [CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-copilot@main/CHANGELOG.md)
 
 ## ✨ Core Features
 
@@ -60,6 +60,13 @@ see [CHANGELOG.md](https://cdn.jsdelivr.net/gh/Achuan-2/siyuan-plugin-copilot@ma
   - One-click jump to original document
   - Flexibly remove unwanted documents
   - Support adding multiple documents simultaneously
+
+## ✏️ Support Modifying SiYuan Note Content
+
+- Support direct modification and adding new blocks based on SiYuan Note block content
+- Support automatic approval for edits
+- Support viewing changes
+- Support rollback after AI modifications
 
 ### 🎯 Prompt Management
 
@@ -117,6 +124,6 @@ Maintaining plugins takes time and effort, personal time and energy are limited.
 
 Features I need will be gradually improved (tips can encourage updates), some features I think can be improved but are not necessary at this stage require tips to improve (will be marked with tip labels and required amounts), while unnecessary features or features that are very difficult to implement will directly close issues without consideration.
 
-Friends who have accumulated ¥50 in tips and want to add me on WeChat can send an email to achuan-2@outlook.com for friend requests (I won't reply to emails or add friends if the tips don't reach ¥50, because I don't want to be a free customer service)
+Friends who have accumulated $50 in tips and want to add me on WeChat can send an email to achuan-2@outlook.com for friend requests (I won't reply to emails or add friends if the tips don't reach $50, because I don't want to be a free customer service)
 
 ![image](https://camo.githubusercontent.com/8052f6f2e7dafba534e781934efa9bcb084fa3a9dfa5c221a85ac63db8b043cb/68747470733a2f2f6173736574732e62336c6f6766696c652e636f6d2f73697975616e2f313631303230353735393030352f6173736574732f6e6574776f726b2d61737365742d696d6167652d32303235303631343132333535382d667568697235762e706e67)

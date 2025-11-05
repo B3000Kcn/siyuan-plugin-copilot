@@ -324,9 +324,11 @@ export async function unfoldBlock(id: BlockId) {
     let url = '/api/block/unfoldBlock';
     return request(url, data);
 }
+export async function refreshSql() {
+    return fetchSyncPost('/api/sqlite/flushTransaction');
+}
 
-
-export async function getBlockKramdown(id: BlockId, mode: string = 'md'): Promise<IResGetBlockKramdown> {
+export async function getBlockKramdown(id: BlockId, mode: string = 'textmark'): Promise<IResGetBlockKramdown> {
     let data = {
         id: id,
         mode: mode // 'md' or 'textmark',
@@ -520,7 +522,7 @@ export async function readDir(path: string): Promise<IResReadDir> {
 
 // **************************************** Export ****************************************
 
-export async function exportMdContent(id: DocumentId,yfm: boolean=true,fillCSSVar: boolean=false,refMode: number=2,embedMode: number=0,adjustHeadingLevel: boolean=true): Promise<IResExportMdContent> {
+export async function exportMdContent(id: DocumentId,yfm: boolean=false,fillCSSVar: boolean=false,refMode: number=2,embedMode: number=0,adjustHeadingLevel: boolean=false): Promise<IResExportMdContent> {
     let data = {
         id: id,
         yfm: yfm,

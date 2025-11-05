@@ -18,11 +18,24 @@ export interface MessageContent {
     };
 }
 
+export interface EditOperation {
+    operationType?: 'update' | 'insert'; // 操作类型：update=更新块，insert=插入块，默认为update
+    blockId: string; // update时为要更新的块ID，insert时为参考块ID
+    newContent: string;
+    oldContent?: string; // kramdown格式的旧内容，用于实际应用编辑
+    oldContentForDisplay?: string; // Markdown格式的旧内容，用于显示差异
+    newContentForDisplay?: string; // Markdown格式的新内容，用于显示差异
+    status: 'pending' | 'applied' | 'rejected';
+    // insert操作的额外参数
+    position?: 'before' | 'after'; // 插入位置：before=在blockId之前，after=在blockId之后
+}
+
 export interface Message {
     role: 'user' | 'assistant' | 'system';
     content: string | MessageContent[];
     attachments?: MessageAttachment[];
     thinking?: string; // 思考过程内容
+    editOperations?: EditOperation[]; // 编辑操作
 }
 
 export interface ChatOptions {

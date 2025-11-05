@@ -110,6 +110,14 @@
         "title": "SiYuan Copilot",
         "unsaved": "未保存",
         "unsavedChanges": "有未保存的更改",
+        "mode": {
+            "label": "模式",
+            "ask": "问答模式",
+            "edit": "编辑模式",
+            "autoApprove": "自动批准",
+            "askDescription": "仅进行问答，不修改笔记内容",
+            "editDescription": "AI可以直接编辑思源笔记内容"
+        },
         "empty": {
             "title": "开始对话",
             "hint": "你可以向AI助手提问，或者拖拽文件到这里进行分析",
@@ -129,6 +137,10 @@
             "copyMessage": "复制消息",
             "copyAsMarkdown": "复制为 Markdown",
             "copyAllChat": "复制全部对话",
+            "copyBefore": "复制修改前",
+            "copyAfter": "复制修改后",
+            "copyOldContent": "复制修改前的内容",
+            "copyNewContent": "复制修改后的内容",
             "clear": "清空对话",
             "settings": "打开设置",
             "upload": "上传文件",
@@ -140,7 +152,12 @@
             "deleteMessage": "删除消息",
             "regenerate": "重新生成",
             "save": "保存",
-            "cancel": "取消"
+            "cancel": "取消",
+            "applyEdit": "应用编辑",
+            "rejectEdit": "拒绝",
+            "viewDiff": "查看差异",
+            "applied": "已应用",
+            "rejected": "已拒绝"
         },
         "input": {
             "placeholder": "输入消息... (可拖入文档、块或粘贴图片)"
@@ -181,6 +198,21 @@
             "title": "附件",
             "remove": "移除附件"
         },
+        "edit": {
+            "title": "编辑操作",
+            "blockId": "块ID",
+            "insertBlock": "插入块",
+            "insertContent": "插入内容",
+            "before": "之前",
+            "after": "之后",
+            "noChanges": "无更改",
+            "changes": "更改内容",
+            "applying": "应用中..."
+        },
+        "diff": {
+            "modeUnified": "对比模式",
+            "modeSplit": "分栏模式"
+        },
         "search": {
             "title": "搜索文档",
             "placeholder": "输入关键词，自动搜索",
@@ -209,7 +241,9 @@
             "openDocumentFailed": "打开文档失败",
             "generating": "正在生成中，请稍候...",
             "noUserMessage": "没有找到用户消息",
-            "requestFailed": "AI 请求失败"
+            "requestFailed": "AI 请求失败",
+            "applyEditFailed": "应用编辑失败",
+            "getBlockFailed": "获取块内容失败"
         },
         "success": {
             "copySuccess": "消息已复制",
@@ -219,7 +253,10 @@
             "blockExists": "该内容已在上下文中",
             "addPromptSuccess": "已添加自定义平台",
             "deletePromptSuccess": "已删除平台",
-            "saveSessionSuccess": "会话已保存"
+            "saveSessionSuccess": "会话已保存",
+            "applyEditSuccess": "编辑已应用",
+            "insertBlockSuccess": "新块已插入",
+            "rejectEditSuccess": "已拒绝编辑"
         },
         "confirm": {
             "clearChat": {

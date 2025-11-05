@@ -9,7 +9,7 @@
     white-space: pre-wrap;
     word-wrap: break-word;
   }
-  
+
   code {
     font-family: var(--b3-font-family-code);
   }
@@ -20,18 +20,72 @@
   &::-webkit-scrollbar {
     width: 8px;
   }
-  
+
   &::-webkit-scrollbar-track {
     background: var(--b3-theme-background);
   }
-  
+
   &::-webkit-scrollbar-thumb {
     background: var(--b3-theme-on-surface-light);
     border-radius: 4px;
-    
+
     &:hover {
       background: var(--b3-theme-on-surface);
     }
+  }
+}
+
+/* 模式选择器样式 */
+.ai-sidebar__mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.ai-sidebar__mode-label {
+  font-size: 12px;
+  color: var(--b3-theme-on-surface);
+  white-space: nowrap;
+}
+
+.ai-sidebar__mode-select {
+  flex-shrink: 0;
+}
+
+.ai-sidebar__auto-approve-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--b3-theme-on-surface);
+  cursor: pointer;
+  margin-left: 8px;
+  white-space: nowrap;
+
+  input[type="checkbox"] {
+    cursor: pointer;
+  }
+
+  span {
+    user-select: none;
+  }
+}
+
+/* 差异查看对话框按钮组样式 */
+.ai-sidebar__diff-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: var(--b3-theme-surface);
+  border-radius: 4px;
+
+  button {
+    flex: 1;
+    padding: 6px 12px;
+    font-size: 12px;
+    white-space: nowrap;
   }
 }
 
@@ -39,5 +93,9 @@
 @media (max-width: 768px) {
   .ai-sidebar {
     font-size: 14px;
+  }
+
+  .ai-sidebar__mode-selector {
+    flex-wrap: wrap;
   }
 }

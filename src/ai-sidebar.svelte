@@ -1,8 +1,21 @@
 <script lang="ts">
     import { onMount, tick, onDestroy } from 'svelte';
-    import { chat, type Message, type MessageAttachment } from './ai-chat';
+    import { chat, type Message, type MessageAttachment, type EditOperation } from './ai-chat';
     import type { MessageContent } from './ai-chat';
-    import { pushMsg, pushErrMsg, sql, exportMdContent, openBlock } from './api';
+    import {getActiveEditor} from 'siyuan';
+    import {
+        refreshSql,
+        pushMsg,
+        pushErrMsg,
+        sql,
+        exportMdContent,
+        openBlock,
+        updateBlock,
+        insertBlock,
+        getBlockDOM,
+        getBlockKramdown,
+        getBlockByID,
+    } from './api';
     import ModelSelector from './components/ModelSelector.svelte';
     import SessionManager from './components/SessionManager.svelte';
     import type { ProviderConfig } from './defaultSettings';
@@ -25,6 +38,7 @@
         id: string;
         title: string;
         content: string;
+        type?: 'doc' | 'block'; // 标识是文档还是块
     }
 
     let messages: Message[] = [];
@@ -93,6 +107,15 @@
 
     // 显示设置
     let messageFontSize = 12;
+
+    // 编辑模式
+    type ChatMode = 'ask' | 'edit';
+    let chatMode: ChatMode = 'ask';
+    let autoApproveEdit = false; // 自动批准编辑操作
+    let isDiffDialogOpen = false;
+    let currentDiffOperation: EditOperation | null = null;
+    type DiffViewMode = 'diff' | 'split';
+    let diffViewMode: DiffViewMode = 'diff'; // diff查看模式：diff或split
 
     // 订阅设置变化
     let unsubscribe: () => void;
@@ -485,6 +508,49 @@
             return;
         }
 
+        // 获取所有上下文文档的最新内容
+        // 问答模式：使用 exportMdContent 获取 Markdown 格式
+        // 编辑模式：使用 getBlockKramdown 获取 kramdown 格式（包含块ID信息）
+        const contextDocumentsWithLatestContent: ContextDocument[] = [];
+        if (contextDocuments.length > 0) {
+            for (const doc of contextDocuments) {
+                try {
+                    let content: string;
+
+                    if (chatMode === 'edit') {
+                        // 编辑模式：获取kramdown格式，保留块ID结构
+                        const blockData = await getBlockKramdown(doc.id);
+                        if (blockData && blockData.kramdown) {
+                            content = blockData.kramdown;
+                        } else {
+                            // 降级使用缓存内容
+                            content = doc.content;
+                        }
+                    } else {
+                        // 问答模式：获取Markdown格式
+                        const data = await exportMdContent(doc.id, false, false, 2, 0, false);
+                        if (data && data.content) {
+                            content = data.content;
+                        } else {
+                            // 降级使用缓存内容
+                            content = doc.content;
+                        }
+                    }
+
+                    contextDocumentsWithLatestContent.push({
+                        id: doc.id,
+                        title: doc.title,
+                        content: content,
+                        type: doc.type, // 保留类型信息
+                    });
+                } catch (error) {
+                    console.error(`Failed to get latest content for block ${doc.id}:`, error);
+                    // 出错时使用缓存的内容
+                    contextDocumentsWithLatestContent.push(doc);
+                }
+            }
+        }
+
         // 用户消息只保存原始输入（不包含文档内容）
         const userContent = currentInput.trim();
 
@@ -530,11 +596,14 @@
                     let textContent = userContent;
 
                     // 然后添加上下文文档（如果有）
-                    if (contextDocuments.length > 0) {
-                        const contextText = contextDocuments
-                            .map(doc => `## 文档: ${doc.title}\n\n${doc.content}`)
+                    if (contextDocumentsWithLatestContent.length > 0) {
+                        const contextText = contextDocumentsWithLatestContent
+                            .map(doc => {
+                                const label = doc.type === 'doc' ? '文档' : '块';
+                                return `## ${label}: ${doc.title}\n\n**BlockID**: \`${doc.id}\`\n\n\`\`\`markdown\n${doc.content}\n\`\`\``;
+                            })
                             .join('\n\n---\n\n');
-                        textContent += `\n\n---\n\n以下是相关文档作为上下文：\n\n${contextText}`;
+                        textContent += `\n\n---\n\n以下是相关内容作为上下文：\n\n${contextText}`;
                     }
 
                     contentParts.push({ type: 'text', text: textContent });
@@ -585,11 +654,14 @@
                     }
 
                     // 添加上下文文档
-                    if (contextDocuments.length > 0) {
-                        const contextText = contextDocuments
-                            .map(doc => `## 文档: ${doc.title}\n\n${doc.content}`)
+                    if (contextDocumentsWithLatestContent.length > 0) {
+                        const contextText = contextDocumentsWithLatestContent
+                            .map(doc => {
+                                const label = doc.type === 'doc' ? '文档' : '块';
+                                return `## ${label}: ${doc.title}\n\n**BlockID**: \`${doc.id}\`\n\n\`\`\`markdown\n${doc.content}\n\`\`\``;
+                            })
                             .join('\n\n---\n\n');
-                        enhancedContent += `\n\n---\n\n以下是相关文档作为上下文：\n\n${contextText}`;
+                        enhancedContent += `\n\n---\n\n以下是相关内容作为上下文：\n\n${contextText}`;
                     }
 
                     lastMessage.content = enhancedContent;
@@ -597,7 +669,173 @@
             }
         }
 
-        if (settings.aiSystemPrompt) {
+        // 根据模式添加系统提示词
+        if (chatMode === 'edit') {
+            // 编辑模式的特殊系统提示词
+            const editModePrompt = `你是一个专业的笔记编辑助手。当用户要求修改内容时，你必须返回JSON格式的编辑指令。
+
+**关于上下文格式**：
+用户提供的上下文将以以下格式呈现：
+
+## 文档: 文档标题
+或
+## 块: 块内容预览
+
+**BlockID**: \`20240101120000-abc123\`
+
+\`\`\`markdown
+这里是kramdown格式的内容，包含块ID信息：
+段落内容
+{: id="20240101120100-def456"}
+
+* 列表项
+  {: id="20240101120200-ghi789"}
+\`\`\`
+
+**关于BlockID和kramdown格式**：
+- **顶层BlockID**：位于 \`\`\`markdown 代码块之前，格式为 **BlockID**: \`xxxxxxxxxx-xxxxxxx\`
+- **子块ID标记**：在markdown代码块内，格式为 {: id="20240101120100-def456"}
+- 段落块会有 {: id="..."} 标记
+- 列表项会有 {: id="..."} 标记  
+- 标题、代码块等各种块都有ID标记
+
+你可以编辑任何包含ID标记的块，包括：
+- 顶层文档/块（使用代码块外的BlockID）
+- 文档内的任何子块（使用代码块内的 {: id="xxx"}）
+
+**提取BlockID的方法**：
+- 从 **BlockID**: \`xxxxx\` 获取顶层块ID
+- 从 {: id="xxxxx"} 获取子块ID
+- BlockID格式通常为：时间戳-字符串，如 20240101120000-abc123
+
+编辑指令格式（必须严格遵循）：
+\`\`\`json
+{
+  "editOperations": [
+    {
+      "operationType": "update",  // 操作类型："update"=更新块（默认），"insert"=插入新块
+      "blockId": "要编辑的块ID（可以是顶层块或子块的ID）",
+      "newContent": "修改后的内容（kramdown格式，保留必要的ID标记）"
+    },
+    {
+      "operationType": "insert",  // 插入新块
+      "blockId": "参考块的ID（在此块前后插入）",
+      "position": "after",  // "before"=在参考块之前插入，"after"=在参考块之后插入（默认）
+      "newContent": "新插入的内容（kramdown格式）"
+    }
+  ]
+}
+\`\`\`
+
+重要规则：
+1. **必须返回JSON格式**：使用上述JSON结构，包裹在 \`\`\`json 代码块中
+2. **blockId 必须来自上下文**：从 [BlockID: xxx] 或 {: id="xxx"} 中提取
+3. **可以编辑任何有ID的块**：不限于顶层块，子块也可以精确编辑
+4. **可以插入新块**：使用 operationType: "insert" 在指定块前后插入新内容
+5. **newContent格式**：应该是kramdown格式，如果编辑子块，内容要包含该块的ID标记；插入新块时不需要ID标记
+6. **可以批量编辑**：在 editOperations 数组中包含多个编辑操作
+7. 思源笔记kramdown格式如果要添加颜色：应该是<span data-type="text">添加颜色的文字1</span>{: style="color: var(--b3-font-color1);"}，优先使用以下颜色变量：
+  - --b3-font-color1: 红色
+  - --b3-font-color2: 橙色
+  - --b3-font-color3: 蓝色
+  - --b3-font-color4: 绿色
+  - --b3-font-color5: 灰色
+8. **添加说明**：在JSON代码块之外，添加文字说明你的修改
+
+示例1 - 编辑顶层块：
+好的，我会帮你改进这段内容：
+
+\`\`\`json
+{
+  "editOperations": [
+    {
+      "operationType": "update",
+      "blockId": "20240101120000-abc123",
+      "newContent": "这是修改后的整个文档内容\\n{: id=\\"20240101120000-abc123\\"}"
+    }
+  ]
+}
+\`\`\`
+
+示例2 - 编辑子块（推荐）：
+我会针对性地修改第二段和第三个列表项：
+
+\`\`\`json
+{
+  "editOperations": [
+    {
+      "operationType": "update",
+      "blockId": "20240101120100-def456",
+      "newContent": "这是修改后的第二段内容，表达更专业。\\n{: id=\\"20240101120100-def456\\"}"
+    },
+    {
+      "operationType": "update",
+      "blockId": "20240101120200-ghi789",
+      "newContent": "* 这是修改后的列表项\\n  {: id=\\"20240101120200-ghi789\\"}"
+    }
+  ]
+}
+\`\`\`
+
+我针对需要改进的具体段落和列表项进行了精确修改。
+
+示例3 - 插入新块：
+我会在第二段后面插入一段补充说明：
+
+\`\`\`json
+{
+  "editOperations": [
+    {
+      "operationType": "insert",
+      "blockId": "20240101120100-def456",
+      "position": "after",
+      "newContent": "这是新插入的补充段落，提供更多细节信息。"
+    }
+  ]
+}
+\`\`\`
+
+我在指定的段落后面添加了补充内容。
+
+示例4 - 混合操作：
+我会修改第一段并在其后插入新内容：
+
+\`\`\`json
+{
+  "editOperations": [
+    {
+      "operationType": "update",
+      "blockId": "20240101120100-def456",
+      "newContent": "这是修改后的段落内容。\\n{: id=\\"20240101120100-def456\\"}"
+    },
+    {
+      "operationType": "insert",
+      "blockId": "20240101120100-def456",
+      "position": "after",
+      "newContent": "这是紧跟在修改段落后的新增内容。"
+    }
+  ]
+}
+\`\`\`
+
+我修改了原段落并在其后添加了补充信息。
+
+注意：
+- 优先编辑子块而不是整个文档，这样更精确且不会影响其他内容
+- 只有在用户明确要求修改内容时才返回JSON编辑指令
+- 如果只是回答问题，则正常回复即可，不要返回JSON
+- 确保JSON格式正确，可以被解析
+- 确保blockId来自上下文中的ID标记（**BlockID**: \`xxx\` 或 {: id="xxx"}）
+- newContent应保留kramdown的ID标记
+- **重要**：newContent中只包含修改后的正文内容，不要包含"## 文档"、"## 块"或"**BlockID**:"这样的上下文标识，这些只是用于你理解上下文的`;
+
+            // 先添加用户的系统提示词（如果有）
+            if (settings.aiSystemPrompt) {
+                messagesToSend.unshift({ role: 'system', content: settings.aiSystemPrompt });
+            }
+            // 再添加编辑模式的提示词
+            messagesToSend.unshift({ role: 'system', content: editModePrompt });
+        } else if (settings.aiSystemPrompt) {
             messagesToSend.unshift({ role: 'system', content: settings.aiSystemPrompt });
         }
 
@@ -651,7 +889,64 @@
                             assistantMessage.thinking = streamingThinking;
                         }
 
-                        messages = [...messages, assistantMessage];
+                        // 如果是编辑模式，解析编辑操作
+                        if (chatMode === 'edit') {
+                            const editOperations = parseEditOperations(convertedText);
+                            if (editOperations.length > 0) {
+                                // 异步获取每个块的旧内容（kramdown格式和Markdown格式）
+                                for (const op of editOperations) {
+                                    try {
+                                        // 获取kramdown格式（用于应用编辑）
+                                        const blockData = await getBlockKramdown(op.blockId);
+                                        if (blockData && blockData.kramdown) {
+                                            op.oldContent = blockData.kramdown;
+                                        }
+
+                                        // 获取Markdown格式（用于显示差异）
+                                        const mdData = await exportMdContent(
+                                            op.blockId,
+                                            false,
+                                            false,
+                                            2,
+                                            0,
+                                            false
+                                        );
+                                        if (mdData && mdData.content) {
+                                            op.oldContentForDisplay = mdData.content;
+                                        }
+
+                                        // 处理newContent用于显示（移除kramdown ID标记）
+                                        op.newContentForDisplay = op.newContent
+                                            .replace(/\{:\s*id="[^"]+"\s*\}/g, '')
+                                            .trim();
+                                    } catch (error) {
+                                        console.error(`获取块 ${op.blockId} 内容失败:`, error);
+                                    }
+                                }
+                                assistantMessage.editOperations = editOperations;
+
+                                // 如果启用了自动批准，则自动应用所有编辑操作
+                                if (autoApproveEdit) {
+                                    messages = [...messages, assistantMessage];
+                                    const currentMessageIndex = messages.length - 1;
+
+                                    for (const op of editOperations) {
+                                        await applyEditOperation(op, currentMessageIndex);
+                                    }
+
+                                    // 更新消息状态
+                                    messages = [...messages];
+                                }
+                            }
+                        }
+
+                        if (
+                            !autoApproveEdit ||
+                            chatMode !== 'edit' ||
+                            !assistantMessage.editOperations?.length
+                        ) {
+                            messages = [...messages, assistantMessage];
+                        }
                         streamingMessage = '';
                         streamingThinking = '';
                         isThinkingPhase = false;
@@ -1241,23 +1536,7 @@
 
     // 获取当前聚焦的编辑器
     function getProtyle() {
-        try {
-            if (document.getElementById('sidebar'))
-                return (window as any).siyuan?.mobile?.editor?.protyle;
-            const currDoc = (window as any).siyuan?.layout?.centerLayout?.children
-                .map((item: any) =>
-                    item.children.find(
-                        (item: any) =>
-                            item.headElement?.classList.contains('item--focus') &&
-                            item.panelElement.closest('.layout__wnd--active')
-                    )
-                )
-                .find((item: any) => item);
-            return currDoc?.model?.editor?.protyle;
-        } catch (e) {
-            console.error(e);
-            return null;
-        }
+        return getActiveEditor(false)?.protyle;
     }
 
     // 获取当前聚焦的块ID
@@ -1318,6 +1597,10 @@
         }
 
         try {
+            // 获取块信息以判断类型
+            const blockInfo = await getBlockByID(blockId);
+            const isDoc = blockInfo?.type === 'd'; // 'd' 表示文档块
+
             // 获取块的Markdown内容
             const data = await exportMdContent(blockId, false, false, 2, 0, false);
             if (data && data.content) {
@@ -1326,7 +1609,7 @@
                 const displayTitle =
                     contentPreview.length > 20
                         ? contentPreview.substring(0, 20) + '...'
-                        : contentPreview || '块内容';
+                        : contentPreview || (isDoc ? '文档内容' : '块内容');
 
                 contextDocuments = [
                     ...contextDocuments,
@@ -1334,6 +1617,7 @@
                         id: blockId,
                         title: displayTitle,
                         content: data.content,
+                        type: isDoc ? 'doc' : 'block',
                     },
                 ];
             }
@@ -1697,6 +1981,316 @@
         }
     }
 
+    // 编辑模式相关函数
+    // 解析AI返回的编辑操作（JSON格式）
+    function parseEditOperations(content: string): EditOperation[] {
+        const operations: EditOperation[] = [];
+
+        try {
+            // 尝试匹配JSON代码块: ```json\n{...}\n```
+            const jsonBlockRegex = /```json\s*\n([\s\S]*?)\n```/gi;
+            let match = jsonBlockRegex.exec(content);
+
+            if (match) {
+                const jsonStr = match[1].trim();
+                const data = JSON.parse(jsonStr);
+
+                if (data.editOperations && Array.isArray(data.editOperations)) {
+                    for (const op of data.editOperations) {
+                        if (op.blockId && op.newContent !== undefined) {
+                            operations.push({
+                                operationType: op.operationType || 'update', // 默认为update
+                                blockId: op.blockId,
+                                newContent: op.newContent,
+                                oldContent: undefined, // 稍后获取
+                                status: 'pending',
+                                position: op.position || 'after', // 默认在后面插入
+                            });
+                        }
+                    }
+                }
+            } else {
+                // 尝试直接解析JSON（不在代码块中）
+                const data = JSON.parse(content);
+                if (data.editOperations && Array.isArray(data.editOperations)) {
+                    for (const op of data.editOperations) {
+                        if (op.blockId && op.newContent !== undefined) {
+                            operations.push({
+                                operationType: op.operationType || 'update', // 默认为update
+                                blockId: op.blockId,
+                                newContent: op.newContent,
+                                oldContent: undefined,
+                                status: 'pending',
+                                position: op.position || 'after', // 默认在后面插入
+                            });
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('解析编辑操作失败:', error);
+        }
+
+        return operations;
+    }
+
+    // 应用编辑操作
+    async function applyEditOperation(operation: EditOperation, messageIndex: number) {
+        try {
+            const operationType = operation.operationType || 'update';
+
+            if (operationType === 'insert') {
+                // 插入新块
+                const position = operation.position || 'after';
+
+                // 根据位置确定参数
+                let nextID: string | null;
+                let previousID: string | null;
+
+                if (position === 'before') {
+                    // 在指定块之前插入
+                    nextID = operation.blockId;
+                } else {
+                    // 在指定块之后插入（默认）
+                    previousID = operation.blockId;
+                }
+
+                // 使用 insertBlock API 插入块
+                const insertResult = await insertBlock('markdown', operation.newContent, nextID, previousID, undefined);
+                await refreshSql();
+                // 获取新插入块的ID（从 doOperations 中获取）
+                const newBlockId = insertResult?.[0]?.doOperations?.[0]?.id;
+                console.log('Inserted new block ID:', newBlockId);  
+                // 创建可撤回的事务
+                if (newBlockId) {
+                    try {
+                        const currentProtyle = getProtyle();
+                        if (currentProtyle) {
+                            await refreshSql();
+                            const newBlockDomRes = await getBlockDOM(newBlockId);
+                            const newBlockDom = newBlockDomRes?.dom;
+                            // 获取父块ID
+                            const block = await getBlockByID(operation.blockId);
+                            const parentID = block?.root_id || currentProtyle.block.id;
+                            const doOperations =[];
+                            if (nextID) {
+                                doOperations.push({
+                                    action: "insert",
+                                    id: newBlockId,
+                                    data: newBlockDom,
+                                    parentID: parentID,
+                                    nextID: nextID,
+                                });
+                            } else {
+                                doOperations.push({
+                                    action: "insert",
+                                    id: newBlockId,
+                                    data: newBlockDom,
+                                    parentID: parentID,
+                                    previousID: previousID,
+                                });
+                            }
+
+                            const undoOperations = [{
+                                action: "delete",
+                                id: newBlockId,
+                                data: null,
+                            }];
+
+                            // 执行事务以支持撤回
+                            currentProtyle.getInstance().transaction(doOperations, undoOperations);
+                        }
+                    } catch (transactionError) {
+                        console.warn('创建撤回事务失败，但块已插入:', transactionError);
+                    }
+                }
+
+                // 更新操作状态
+                const message = messages[messageIndex];
+                if (message.editOperations) {
+                    const op = message.editOperations.find(
+                        o =>
+                            o.blockId === operation.blockId && o.newContent === operation.newContent
+                    );
+                    if (op) {
+                        op.status = 'applied';
+                    }
+                }
+                messages = [...messages];
+                hasUnsavedChanges = true;
+
+                pushMsg(t('aiSidebar.success.insertBlockSuccess'));
+            } else {
+                // 更新现有块
+                // 获取当前块内容
+                const blockData = await getBlockKramdown(operation.blockId);
+                if (!blockData || !blockData.kramdown) {
+                    pushErrMsg(t('aiSidebar.errors.getBlockFailed'));
+                    return;
+                }
+
+                // 保存旧内容用于显示（如果还没有保存）
+                if (!operation.oldContent) {
+                    operation.oldContent = blockData.kramdown;
+                }
+
+                // 保存旧的DOM用于撤回操作
+                const oldBlockDomRes =await getBlockDOM(operation.blockId);
+
+                // 使用 updateBlock API 更新块内容
+                await updateBlock('markdown', operation.newContent, operation.blockId);
+                await refreshSql();
+                // 获取当前编辑器实例并创建可撤回的事务
+                try {
+                    const currentProtyle = getProtyle();
+                    if (currentProtyle) {
+                        await refreshSql();
+                        const oldBlockDom = oldBlockDomRes?.dom;
+                        const newBlockDomRes = await getBlockDOM(operation.blockId);
+                        const newBlockDom = newBlockDomRes?.dom;
+                        currentProtyle
+                            .getInstance()
+                            .updateTransaction(operation.blockId, newBlockDom, oldBlockDom);
+                    }
+                } catch (transactionError) {
+                    console.warn('创建撤回事务失败，但块内容已更新:', transactionError);
+                }
+
+                // 更新操作状态
+                const message = messages[messageIndex];
+                if (message.editOperations) {
+                    const op = message.editOperations.find(o => o.blockId === operation.blockId);
+                    if (op) {
+                        op.status = 'applied';
+                    }
+                }
+                messages = [...messages];
+                hasUnsavedChanges = true;
+
+                pushMsg(t('aiSidebar.success.applyEditSuccess'));
+            }
+        } catch (error) {
+            console.error('应用编辑失败:', error);
+            pushErrMsg(t('aiSidebar.errors.applyEditFailed'));
+        }
+    }
+
+    // 拒绝编辑操作
+    function rejectEditOperation(operation: EditOperation, messageIndex: number) {
+        const message = messages[messageIndex];
+        if (message.editOperations) {
+            const op = message.editOperations.find(o => o.blockId === operation.blockId);
+            if (op) {
+                op.status = 'rejected';
+            }
+        }
+        messages = [...messages];
+        hasUnsavedChanges = true;
+        pushMsg(t('aiSidebar.success.rejectEditSuccess'));
+    }
+
+    // 查看差异
+    async function viewDiff(operation: EditOperation) {
+        const operationType = operation.operationType || 'update';
+
+        if (operationType === 'insert') {
+            // 插入操作：旧内容为空，新内容为要插入的内容
+            const newMdContent =
+                operation.newContentForDisplay ||
+                operation.newContent.replace(/\{:\s*id="[^"]+"\s*\}/g, '').trim();
+
+            currentDiffOperation = {
+                ...operation,
+                oldContent: '', // 插入操作没有旧内容
+                newContent: operation.newContentForDisplay || newMdContent,
+            };
+        } else {
+            // 更新操作
+            // 使用保存的Markdown格式内容来显示差异
+            // 这样可以看到真正的修改前内容，即使块已经被修改了
+            const oldMdContent = operation.oldContentForDisplay || operation.oldContent || '';
+            const newMdContent =
+                operation.newContentForDisplay ||
+                operation.newContent.replace(/\{:\s*id="[^"]+"\s*\}/g, '').trim();
+
+            // 如果没有保存的显示内容（兼容旧数据），尝试实时获取
+            if (!operation.oldContentForDisplay) {
+                try {
+                    const oldMdData = await exportMdContent(
+                        operation.blockId,
+                        false,
+                        false,
+                        2,
+                        0,
+                        false
+                    );
+                    if (oldMdData?.content) {
+                        operation.oldContentForDisplay = oldMdData.content;
+                    }
+                } catch (error) {
+                    console.error('获取块内容失败:', error);
+                }
+            }
+
+            // 创建用于显示的临时operation对象
+            currentDiffOperation = {
+                ...operation,
+                oldContent: operation.oldContentForDisplay || oldMdContent,
+                newContent: operation.newContentForDisplay || newMdContent,
+            };
+        }
+
+        isDiffDialogOpen = true;
+    }
+
+    // 关闭差异对话框
+    function closeDiffDialog() {
+        isDiffDialogOpen = false;
+        currentDiffOperation = null;
+    }
+
+    // 简单的差异高亮（按行对比）
+    function generateSimpleDiff(
+        oldText: string,
+        newText: string
+    ): { type: 'removed' | 'added' | 'unchanged'; line: string }[] {
+        const oldLines = oldText.split('\n');
+        const newLines = newText.split('\n');
+        const result: { type: 'removed' | 'added' | 'unchanged'; line: string }[] = [];
+
+        // 简单的行对比（可以使用更复杂的diff算法）
+        const maxLen = Math.max(oldLines.length, newLines.length);
+        let oldIdx = 0;
+        let newIdx = 0;
+
+        while (oldIdx < oldLines.length || newIdx < newLines.length) {
+            const oldLine = oldLines[oldIdx] || '';
+            const newLine = newLines[newIdx] || '';
+
+            if (oldLine === newLine) {
+                result.push({ type: 'unchanged', line: oldLine });
+                oldIdx++;
+                newIdx++;
+            } else if (oldIdx < oldLines.length && newIdx < newLines.length) {
+                // 两行都存在但不同
+                result.push({ type: 'removed', line: oldLine });
+                result.push({ type: 'added', line: newLine });
+                oldIdx++;
+                newIdx++;
+            } else if (oldIdx < oldLines.length) {
+                // 只有旧行
+                result.push({ type: 'removed', line: oldLine });
+                oldIdx++;
+            } else {
+                // 只有新行
+                result.push({ type: 'added', line: newLine });
+                newIdx++;
+            }
+        }
+
+        return result;
+    }
+
     // 消息操作函数
     // 开始编辑消息
     function startEditMessage(index: number) {
@@ -1765,6 +2359,45 @@
 
         await scrollToBottom(true);
 
+        // 获取最新的上下文文档内容
+        const contextDocumentsWithLatestContent: ContextDocument[] = [];
+        for (const doc of contextDocuments) {
+            try {
+                let content: string;
+
+                if (chatMode === 'edit') {
+                    // 编辑模式：获取kramdown格式，保留块ID结构
+                    const blockData = await getBlockKramdown(doc.id);
+                    if (blockData && blockData.kramdown) {
+                        content = blockData.kramdown;
+                    } else {
+                        // 降级使用缓存内容
+                        content = doc.content;
+                    }
+                } else {
+                    // 问答模式：获取Markdown格式
+                    const data = await exportMdContent(doc.id, false, false, 2, 0, false);
+                    if (data && data.content) {
+                        content = data.content;
+                    } else {
+                        // 降级使用缓存内容
+                        content = doc.content;
+                    }
+                }
+
+                contextDocumentsWithLatestContent.push({
+                    id: doc.id,
+                    title: doc.title,
+                    content: content,
+                    type: doc.type,
+                });
+            } catch (error) {
+                console.error(`Failed to fetch latest content for block ${doc.id}:`, error);
+                // 如果获取失败，使用原有内容
+                contextDocumentsWithLatestContent.push(doc);
+            }
+        }
+
         // 准备发送给AI的消息（包含系统提示词和上下文文档）
         // 深拷贝消息数组，避免修改原始消息
         const messagesToSend = messages
@@ -1792,11 +2425,14 @@
                             : getMessageText(lastUserMessage.content);
 
                     // 然后添加上下文文档（如果有）
-                    if (contextDocuments.length > 0) {
-                        const contextText = contextDocuments
-                            .map(doc => `## 文档: ${doc.title}\n\n${doc.content}`)
+                    if (contextDocumentsWithLatestContent.length > 0) {
+                        const contextText = contextDocumentsWithLatestContent
+                            .map(doc => {
+                                const label = doc.type === 'doc' ? '文档' : '块';
+                                return `## ${label}: ${doc.title}\n\n**BlockID**: \`${doc.id}\`\n\n\`\`\`markdown\n${doc.content}\n\`\`\``;
+                            })
                             .join('\n\n---\n\n');
-                        textContent += `\n\n---\n\n以下是相关文档作为上下文：\n\n${contextText}`;
+                        textContent += `\n\n---\n\n以下是相关内容作为上下文：\n\n${contextText}`;
                     }
 
                     contentParts.push({ type: 'text', text: textContent });
@@ -1850,11 +2486,14 @@
                     }
 
                     // 添加上下文文档
-                    if (contextDocuments.length > 0) {
-                        const contextText = contextDocuments
-                            .map(doc => `## 文档: ${doc.title}\n\n${doc.content}`)
+                    if (contextDocumentsWithLatestContent.length > 0) {
+                        const contextText = contextDocumentsWithLatestContent
+                            .map(doc => {
+                                const label = doc.type === 'doc' ? '文档' : '块';
+                                return `## ${label}: ${doc.title}\n\n**BlockID**: \`${doc.id}\`\n\n\`\`\`markdown\n${doc.content}\n\`\`\``;
+                            })
                             .join('\n\n---\n\n');
-                        enhancedContent += `\n\n---\n\n以下是相关文档作为上下文：\n\n${contextText}`;
+                        enhancedContent += `\n\n---\n\n以下是相关内容作为上下文：\n\n${contextText}`;
                     }
 
                     lastMessage.content = enhancedContent;
@@ -2102,13 +2741,93 @@
                         </div>
                     {/if}
 
-                    <!-- 显示模式 -->
+                    <!-- 显示消息内容 -->
                     <div
                         class="ai-message__content protyle-wysiwyg"
                         style={messageFontSize ? `font-size: ${messageFontSize}px;` : ''}
                     >
                         {@html formatMessage(message.content)}
                     </div>
+
+                    <!-- 显示编辑操作 -->
+                    {#if message.role === 'assistant' && message.editOperations && message.editOperations.length > 0}
+                        <div class="ai-message__edit-operations">
+                            <div class="ai-message__edit-operations-title">
+                                📝 {t('aiSidebar.edit.title')} ({message.editOperations.length})
+                            </div>
+                            {#each message.editOperations as operation}
+                                <div
+                                    class="ai-message__edit-operation"
+                                    class:ai-message__edit-operation--applied={operation.status ===
+                                        'applied'}
+                                    class:ai-message__edit-operation--rejected={operation.status ===
+                                        'rejected'}
+                                >
+                                    <div class="ai-message__edit-operation-header">
+                                        <span class="ai-message__edit-operation-id">
+                                            {#if operation.operationType === 'insert'}
+                                                {t('aiSidebar.edit.insertBlock')}:
+                                                {operation.position === 'before'
+                                                    ? t('aiSidebar.edit.before')
+                                                    : t('aiSidebar.edit.after')}
+                                                {operation.blockId}
+                                            {:else}
+                                                {t('aiSidebar.edit.blockId')}: {operation.blockId}
+                                            {/if}
+                                        </span>
+                                        <span class="ai-message__edit-operation-status">
+                                            {#if operation.status === 'applied'}
+                                                ✓ {t('aiSidebar.actions.applied')}
+                                            {:else if operation.status === 'rejected'}
+                                                ✗ {t('aiSidebar.actions.rejected')}
+                                            {:else}
+                                                ⏳ {t('aiSidebar.edit.changes')}
+                                            {/if}
+                                        </span>
+                                    </div>
+                                    <div class="ai-message__edit-operation-actions">
+                                        <!-- 查看差异按钮：所有状态都可以查看 -->
+                                        <button
+                                            class="b3-button b3-button--text"
+                                            on:click={() => viewDiff(operation)}
+                                            title={t('aiSidebar.actions.viewDiff')}
+                                        >
+                                            <svg class="b3-button__icon">
+                                                <use xlink:href="#iconEye"></use>
+                                            </svg>
+                                            {t('aiSidebar.actions.viewDiff')}
+                                        </button>
+
+                                        {#if operation.status === 'pending'}
+                                            <!-- 应用和拒绝按钮：仅在pending状态显示 -->
+                                            <button
+                                                class="b3-button b3-button--outline"
+                                                on:click={() =>
+                                                    applyEditOperation(operation, index)}
+                                                title={t('aiSidebar.actions.applyEdit')}
+                                            >
+                                                <svg class="b3-button__icon">
+                                                    <use xlink:href="#iconCheck"></use>
+                                                </svg>
+                                                {t('aiSidebar.actions.applyEdit')}
+                                            </button>
+                                            <button
+                                                class="b3-button b3-button--text"
+                                                on:click={() =>
+                                                    rejectEditOperation(operation, index)}
+                                                title={t('aiSidebar.actions.rejectEdit')}
+                                            >
+                                                <svg class="b3-button__icon">
+                                                    <use xlink:href="#iconClose"></use>
+                                                </svg>
+                                                {t('aiSidebar.actions.rejectEdit')}
+                                            </button>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    {/if}
 
                     <!-- 消息操作按钮 -->
                     <div class="ai-message__actions">
@@ -2271,6 +2990,29 @@
         on:dragleave={handleDragLeave}
         on:drop={handleDrop}
     >
+        <!-- 模式选择 -->
+        <div class="ai-sidebar__mode-selector">
+            <label for="chat-mode-select" class="ai-sidebar__mode-label">
+                {t('aiSidebar.mode.label')}:
+            </label>
+            <select
+                id="chat-mode-select"
+                class="b3-select ai-sidebar__mode-select"
+                bind:value={chatMode}
+            >
+                <option value="ask">{t('aiSidebar.mode.ask')}</option>
+                <option value="edit">{t('aiSidebar.mode.edit')}</option>
+            </select>
+
+            <!-- 自动批准复选框（仅在编辑模式下显示） -->
+            {#if chatMode === 'edit'}
+                <label class="ai-sidebar__auto-approve-label">
+                    <input type="checkbox" class="b3-switch" bind:checked={autoApproveEdit} />
+                    <span>{t('aiSidebar.mode.autoApprove')}</span>
+                </label>
+            {/if}
+        </div>
+
         <div class="ai-sidebar__input-row">
             <div class="ai-sidebar__input-wrapper">
                 <textarea
@@ -2573,6 +3315,172 @@
                     </button>
                     <button class="b3-button b3-button--text" on:click={saveEditMessage}>
                         {t('aiSidebar.actions.save')}
+                    </button>
+                </div>
+            </div>
+        </div>
+    {/if}
+
+    <!-- 差异对比对话框 -->
+    {#if isDiffDialogOpen && currentDiffOperation}
+        <div class="ai-sidebar__diff-dialog">
+            <div class="ai-sidebar__diff-dialog-overlay" on:click={closeDiffDialog}></div>
+            <div class="ai-sidebar__diff-dialog-content">
+                <div class="ai-sidebar__diff-dialog-header">
+                    <h3>
+                        {#if currentDiffOperation.operationType === 'insert'}
+                            {t('aiSidebar.edit.insertBlock')} - {t('aiSidebar.actions.viewDiff')}
+                        {:else}
+                            {t('aiSidebar.actions.viewDiff')}
+                        {/if}
+                    </h3>
+                    {#if currentDiffOperation.operationType !== 'insert'}
+                        <div class="ai-sidebar__diff-mode-selector">
+                            <button
+                                class="b3-button b3-button--text"
+                                class:b3-button--primary={diffViewMode === 'diff'}
+                                on:click={() => (diffViewMode = 'diff')}
+                            >
+                                {t('aiSidebar.diff.modeUnified')}
+                            </button>
+                            <button
+                                class="b3-button b3-button--text"
+                                class:b3-button--primary={diffViewMode === 'split'}
+                                on:click={() => (diffViewMode = 'split')}
+                            >
+                                {t('aiSidebar.diff.modeSplit')}
+                            </button>
+                        </div>
+                    {/if}
+                    <button class="b3-button b3-button--cancel" on:click={closeDiffDialog}>
+                        <svg class="b3-button__icon"><use xlink:href="#iconClose"></use></svg>
+                    </button>
+                </div>
+                <div class="ai-sidebar__diff-dialog-body">
+                    <div class="ai-sidebar__diff-info">
+                        {#if currentDiffOperation.operationType === 'insert'}
+                            <strong>{t('aiSidebar.edit.insertBlock')}:</strong>
+                            {currentDiffOperation.position === 'before'
+                                ? t('aiSidebar.edit.before')
+                                : t('aiSidebar.edit.after')}
+                            {currentDiffOperation.blockId}
+                        {:else}
+                            <strong>{t('aiSidebar.edit.blockId')}:</strong>
+                            {currentDiffOperation.blockId}
+                        {/if}
+                    </div>
+                    {#if currentDiffOperation.operationType === 'insert'}
+                        <!-- 插入操作：只显示新内容 -->
+                        <div class="ai-sidebar__diff-content">
+                            <div class="ai-sidebar__diff-split-header" style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+                                <span>{t('aiSidebar.edit.insertContent')}</span>
+                                <button
+                                    class="b3-button b3-button--text b3-button--small"
+                                    on:click={() => {
+                                        navigator.clipboard.writeText(currentDiffOperation.newContent);
+                                        pushMsg(t('aiSidebar.success.copySuccess'));
+                                    }}
+                                    title={t('aiSidebar.actions.copyNewContent')}
+                                >
+                                    <svg class="b3-button__icon"><use xlink:href="#iconCopy"></use></svg>
+                                    {t('aiSidebar.actions.copy')}
+                                </button>
+                            </div>
+                            <pre
+                                class="ai-sidebar__diff-split-content"
+                                style="border: 1px solid var(--b3-theme-success); background-color: var(--b3-theme-success-lighter);">{currentDiffOperation.newContent}</pre>
+                        </div>
+                    {:else if currentDiffOperation.oldContent}
+                        {#if diffViewMode === 'diff'}
+                            <!-- Diff模式：传统的行对比视图 -->
+                            <div class="ai-sidebar__diff-actions">
+                                <button
+                                    class="b3-button b3-button--text b3-button--small"
+                                    on:click={() => {
+                                        navigator.clipboard.writeText(currentDiffOperation.oldContent);
+                                        pushMsg(t('aiSidebar.success.copySuccess'));
+                                    }}
+                                    title={t('aiSidebar.actions.copyOldContent')}
+                                >
+                                    <svg class="b3-button__icon"><use xlink:href="#iconCopy"></use></svg>
+                                    {t('aiSidebar.actions.copyBefore')}
+                                </button>
+                                <button
+                                    class="b3-button b3-button--text b3-button--small"
+                                    on:click={() => {
+                                        navigator.clipboard.writeText(currentDiffOperation.newContent);
+                                        pushMsg(t('aiSidebar.success.copySuccess'));
+                                    }}
+                                    title={t('aiSidebar.actions.copyNewContent')}
+                                >
+                                    <svg class="b3-button__icon"><use xlink:href="#iconCopy"></use></svg>
+                                    {t('aiSidebar.actions.copyAfter')}
+                                </button>
+                            </div>
+                            <div class="ai-sidebar__diff-content">
+                                {#each generateSimpleDiff(currentDiffOperation.oldContent, currentDiffOperation.newContent) as line}
+                                    <div
+                                        class="ai-sidebar__diff-line ai-sidebar__diff-line--{line.type}"
+                                    >
+                                        {#if line.type === 'removed'}
+                                            <span class="ai-sidebar__diff-marker">-</span>
+                                        {:else if line.type === 'added'}
+                                            <span class="ai-sidebar__diff-marker">+</span>
+                                        {:else}
+                                            <span class="ai-sidebar__diff-marker"></span>
+                                        {/if}
+                                        <span class="ai-sidebar__diff-text">{line.line}</span>
+                                    </div>
+                                {/each}
+                            </div>
+                        {:else}
+                            <!-- Split模式：左右分栏视图 -->
+                            <div class="ai-sidebar__diff-split">
+                                <div class="ai-sidebar__diff-split-column">
+                                    <div class="ai-sidebar__diff-split-header">
+                                        <span>{t('aiSidebar.edit.before')}</span>
+                                        <button
+                                            class="b3-button b3-button--text b3-button--small"
+                                            on:click={() => {
+                                                navigator.clipboard.writeText(currentDiffOperation.oldContent);
+                                                pushMsg(t('aiSidebar.success.copySuccess'));
+                                            }}
+                                            title={t('aiSidebar.actions.copyOldContent')}
+                                        >
+                                            <svg class="b3-button__icon"><use xlink:href="#iconCopy"></use></svg>
+                                        </button>
+                                    </div>
+                                    <pre
+                                        class="ai-sidebar__diff-split-content">{currentDiffOperation.oldContent}</pre>
+                                </div>
+                                <div class="ai-sidebar__diff-split-column">
+                                    <div class="ai-sidebar__diff-split-header">
+                                        <span>{t('aiSidebar.edit.after')}</span>
+                                        <button
+                                            class="b3-button b3-button--text b3-button--small"
+                                            on:click={() => {
+                                                navigator.clipboard.writeText(currentDiffOperation.newContent);
+                                                pushMsg(t('aiSidebar.success.copySuccess'));
+                                            }}
+                                            title={t('aiSidebar.actions.copyNewContent')}
+                                        >
+                                            <svg class="b3-button__icon"><use xlink:href="#iconCopy"></use></svg>
+                                        </button>
+                                    </div>
+                                    <pre
+                                        class="ai-sidebar__diff-split-content">{currentDiffOperation.newContent}</pre>
+                                </div>
+                            </div>
+                        {/if}
+                    {:else}
+                        <div class="ai-sidebar__diff-loading">
+                            {t('common.loading')}
+                        </div>
+                    {/if}
+                </div>
+                <div class="ai-sidebar__diff-dialog-footer">
+                    <button class="b3-button b3-button--cancel" on:click={closeDiffDialog}>
+                        {t('common.close')}
                     </button>
                 </div>
             </div>
@@ -3084,6 +3992,26 @@
         flex-shrink: 0;
         position: relative;
         transition: background-color 0.2s;
+    }
+
+    .ai-sidebar__mode-selector {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+    }
+
+    .ai-sidebar__mode-label {
+        font-size: 13px;
+        color: var(--b3-theme-on-surface);
+        font-weight: 500;
+        flex-shrink: 0;
+    }
+
+    .ai-sidebar__mode-select {
+        flex: 0 0 auto;
+        min-width: 120px;
+        font-size: 13px;
     }
 
     .ai-sidebar__input-row {
@@ -3762,6 +4690,254 @@
     }
 
     .ai-sidebar__edit-dialog-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        padding: 16px;
+        border-top: 1px solid var(--b3-border-color);
+    }
+
+    // 编辑操作样式
+    .ai-message__edit-operations {
+        margin-top: 12px;
+        padding: 12px;
+        background: var(--b3-theme-surface);
+        border: 1px solid var(--b3-border-color);
+        border-radius: 6px;
+    }
+
+    .ai-message__edit-operations-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--b3-theme-on-surface);
+        margin-bottom: 12px;
+    }
+
+    .ai-message__edit-operation {
+        padding: 12px;
+        background: var(--b3-theme-background);
+        border: 1px solid var(--b3-border-color);
+        border-radius: 6px;
+        margin-bottom: 8px;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+
+        &--applied {
+            border-color: var(--b3-theme-success);
+            background: var(--b3-theme-success-lightest);
+        }
+
+        &--rejected {
+            border-color: var(--b3-theme-error);
+            background: var(--b3-theme-error-lightest);
+            opacity: 0.7;
+        }
+    }
+
+    .ai-message__edit-operation-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        font-size: 12px;
+    }
+
+    .ai-message__edit-operation-id {
+        color: var(--b3-theme-on-surface);
+        font-family: var(--b3-font-family-code);
+    }
+
+    .ai-message__edit-operation-status {
+        font-weight: 600;
+
+        .ai-message__edit-operation--applied & {
+            color: var(--b3-theme-success);
+        }
+
+        .ai-message__edit-operation--rejected & {
+            color: var(--b3-theme-error);
+        }
+    }
+
+    .ai-message__edit-operation-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+
+    // 差异对比对话框样式
+    .ai-sidebar__diff-dialog {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .ai-sidebar__diff-dialog-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    .ai-sidebar__diff-dialog-content {
+        position: relative;
+        width: 90%;
+        max-width: 900px;
+        background: var(--b3-theme-background);
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        max-height: 80vh;
+    }
+
+    .ai-sidebar__diff-dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px;
+        border-bottom: 1px solid var(--b3-border-color);
+        gap: 12px;
+
+        h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .b3-button {
+            padding: 4px;
+            min-width: auto;
+        }
+    }
+
+    .ai-sidebar__diff-mode-selector {
+        display: flex;
+        gap: 4px;
+
+        .b3-button {
+            padding: 4px 12px;
+            font-size: 12px;
+        }
+    }
+
+    .ai-sidebar__diff-dialog-body {
+        padding: 16px;
+        overflow-y: auto;
+        flex: 1;
+    }
+
+    .ai-sidebar__diff-info {
+        padding: 12px;
+        background: var(--b3-theme-surface);
+        border-radius: 6px;
+        margin-bottom: 16px;
+        font-size: 13px;
+
+        strong {
+            color: var(--b3-theme-on-surface);
+        }
+    }
+
+    .ai-sidebar__diff-content {
+        font-family: var(--b3-font-family-code);
+        font-size: 13px;
+        line-height: 1.6;
+        background: var(--b3-theme-surface);
+        border-radius: 6px;
+        border: 1px solid var(--b3-border-color);
+        overflow: auto;
+    }
+
+    .ai-sidebar__diff-line {
+        display: flex;
+        padding: 2px 12px;
+        min-height: 24px;
+
+        &--removed {
+            background: rgba(255, 0, 0, 0.1);
+            color: var(--b3-theme-error);
+        }
+
+        &--added {
+            background: rgba(0, 255, 0, 0.1);
+            color: var(--b3-theme-success);
+        }
+
+        &--unchanged {
+            color: var(--b3-theme-on-surface);
+        }
+    }
+
+    .ai-sidebar__diff-marker {
+        display: inline-block;
+        width: 20px;
+        flex-shrink: 0;
+        font-weight: 600;
+    }
+
+    .ai-sidebar__diff-text {
+        flex: 1;
+        white-space: pre-wrap;
+        word-break: break-word;
+    }
+
+    .ai-sidebar__diff-loading {
+        text-align: center;
+        padding: 32px;
+        color: var(--b3-theme-on-surface-light);
+    }
+
+    .ai-sidebar__diff-split {
+        display: flex;
+        gap: 12px;
+        height: 100%;
+        min-height: 400px;
+    }
+
+    .ai-sidebar__diff-split-column {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--b3-border-color);
+        border-radius: 6px;
+        background: var(--b3-theme-surface);
+        overflow: hidden;
+    }
+
+    .ai-sidebar__diff-split-header {
+        padding: 8px 12px;
+        background: var(--b3-theme-surface-light);
+        border-bottom: 1px solid var(--b3-border-color);
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--b3-theme-on-surface);
+    }
+
+    .ai-sidebar__diff-split-content {
+        flex: 1;
+        margin: 0;
+        padding: 12px;
+        overflow: auto;
+        font-family: var(--b3-font-family-code);
+        font-size: 13px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--b3-theme-on-surface);
+    }
+
+    .ai-sidebar__diff-dialog-footer {
         display: flex;
         justify-content: flex-end;
         gap: 8px;

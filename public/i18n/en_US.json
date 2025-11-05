@@ -111,6 +111,14 @@
         "title": "SiYuan Copilot",
         "unsaved": "Unsaved",
         "unsavedChanges": "Unsaved changes",
+        "mode": {
+            "label": "Mode",
+            "ask": "Ask Mode",
+            "edit": "Edit Mode",
+            "autoApprove": "Auto Approve",
+            "askDescription": "Q&A only, no modification to note content",
+            "editDescription": "AI can directly edit SiYuan note content"
+        },
         "empty": {
             "title": "Start Conversation",
             "hint": "You can ask questions to the AI assistant, or drag files here for analysis",
@@ -130,6 +138,10 @@
             "copyMessage": "Copy Message",
             "copyAsMarkdown": "Copy as Markdown",
             "copyAllChat": "Copy All Chat",
+            "copyBefore": "Copy Before",
+            "copyAfter": "Copy After",
+            "copyOldContent": "Copy Old Content",
+            "copyNewContent": "Copy New Content",
             "clear": "Clear Chat",
             "settings": "Open Settings",
             "upload": "Upload File",
@@ -141,7 +153,12 @@
             "deleteMessage": "Delete Message",
             "regenerate": "Regenerate",
             "save": "Save",
-            "cancel": "Cancel"
+            "cancel": "Cancel",
+            "applyEdit": "Apply Edit",
+            "rejectEdit": "Reject",
+            "viewDiff": "View Diff",
+            "applied": "Applied",
+            "rejected": "Rejected"
         },
         "input": {
             "placeholder": "Type a message... (drag docs, blocks or paste images)"
@@ -182,6 +199,21 @@
             "title": "Attachments",
             "remove": "Remove Attachment"
         },
+        "edit": {
+            "title": "Edit Operations",
+            "blockId": "Block ID",
+            "insertBlock": "Insert Block",
+            "insertContent": "Insert Content",
+            "before": "Before",
+            "after": "After",
+            "noChanges": "No Changes",
+            "changes": "Changes",
+            "applying": "Applying..."
+        },
+        "diff": {
+            "modeUnified": "Unified Diff",
+            "modeSplit": "Split View"
+        },
         "search": {
             "title": "Search Documents",
             "placeholder": "Enter keywords for auto search",
@@ -210,7 +242,9 @@
             "openDocumentFailed": "Failed to open document",
             "generating": "Generating in progress, please wait...",
             "noUserMessage": "No user message found",
-            "requestFailed": "AI Request Failed"
+            "requestFailed": "AI Request Failed",
+            "applyEditFailed": "Failed to apply edit",
+            "getBlockFailed": "Failed to get block content"
         },
         "success": {
             "copySuccess": "Message copied",
@@ -220,7 +254,10 @@
             "blockExists": "This content is already in context",
             "addPromptSuccess": "Custom platform added",
             "deletePromptSuccess": "Platform deleted",
-            "saveSessionSuccess": "Session saved"
+            "saveSessionSuccess": "Session saved",
+            "applyEditSuccess": "Edit applied successfully",
+            "insertBlockSuccess": "New block inserted successfully",
+            "rejectEditSuccess": "Edit rejected"
         },
         "confirm": {
             "clearChat": {
