@@ -1,3 +1,18 @@
+## v0.1.0 / 20251106
+
+- ✨多选拖动块也支持批量添加到上下文
+- ✨创建新自定义平台后，默认选中新建的平台，方便进行设置
+- ✨选择平台不要影响当前已经选中的模型，目前切换选中平台会影响模型，希望删除平台且这个平台的模型是当前选中的模型才影响
+- ✨内置平台API地址输入框隐藏
+
+---
+
+- ✨ Support adding multiple selected dragged blocks to context
+- ✨ After creating a new custom platform, the newly created platform is selected by default for easy configuration
+- ✨ Selecting a platform should not affect the currently selected model. Currently, switching the selected platform affects the model. It is hoped that deleting a platform will only affect the current selected model if that platform's model is the currently selected one.
+- ✨ Hide the built-in platform API address input box
+
+
 ## v0.0.9 / 20251106
 
 - ✨ 支持多选文档添加到上下文
