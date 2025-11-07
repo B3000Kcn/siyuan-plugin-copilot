@@ -156,16 +156,13 @@ LIMIT 50;
 -- 获取最近更新的文档
 SELECT * FROM blocks WHERE type='d' ORDER BY updated DESC LIMIT 50;
 
--- 统计某个笔记本的文档数量
-SELECT COUNT(*) FROM blocks WHERE box='20210808180117-6v0mkxr' AND type='d';
-
 -- 查找带有特定标签的块
 SELECT * FROM blocks WHERE tag LIKE '%标签名%';
 \`\`\`
 
 ## 注意事项
 - 避免查询过多数据，使用LIMIT限制结果数量，默认50，除非用户有要求指定数量
-- 使用索引字段（id, type, box）可以提高查询效率
+- 查询之后的结果总结，使用思源笔记块链接的格式包裹，如\`[脑机接口](siyuan://blocks/20240519195512-ccrifu0)\`
 `,
             parameters: {
                 type: 'object',
@@ -644,14 +641,6 @@ siyuan_move_documents({
  */
 export async function siyuan_sql_query(sqlQuery: string): Promise<any[]> {
     try {
-        // 安全检查：防止危险操作
-        const dangerousKeywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE'];
-        const upperQuery = sqlQuery.toUpperCase();
-        for (const keyword of dangerousKeywords) {
-            if (upperQuery.includes(keyword)) {
-                throw new Error(`不允许执行包含 ${keyword} 的SQL语句，仅支持SELECT查询`);
-            }
-        }
 
         // 限制返回数量
         const limitedQuery = sqlQuery.includes('LIMIT') ? sqlQuery : `${sqlQuery} LIMIT 1000`;
