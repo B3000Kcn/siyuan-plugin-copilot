@@ -31,7 +31,7 @@
         if (!config.advancedConfig) {
             config.advancedConfig = {
                 customModelsUrl: '',
-                customChatUrl: ''
+                customChatUrl: '',
             };
         }
     }
