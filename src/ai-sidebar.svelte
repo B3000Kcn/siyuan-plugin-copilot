@@ -2208,8 +2208,9 @@
             // 检查window.Lute是否存在
             if (typeof window !== 'undefined' && (window as any).Lute) {
                 const lute = (window as any).Lute.New();
-                // 使用Md2BlockDOM将markdown转换为HTML
-                const html = lute.Md2BlockDOM(textContent);
+                // 使用Md2HTML将markdown转换为HTML，而不是Md2BlockDOM
+                // Md2HTML不会生成带data-node-id的块级结构，可以正常跨块选择文本
+                const html = lute.Md2HTML(textContent);
                 return html;
             }
             // 如果Lute不可用，回退到简单渲染
@@ -2391,12 +2392,64 @@
 
             const katex = (window as any).katex;
 
-            // 处理 Lute 渲染的数学公式元素（带 data-subtype="math" 属性）
-            const mathElements = element.querySelectorAll(
+            // 处理新格式的行内数学公式 span.language-math
+            const inlineMathElements = element.querySelectorAll(
+                'span.language-math:not([data-math-rendered])'
+            );
+
+            inlineMathElements.forEach((mathElement: HTMLElement) => {
+                try {
+                    // 获取数学公式内容（从 textContent 获取）
+                    const mathContent = mathElement.textContent?.trim();
+                    if (mathContent) {
+                        const html = katex.renderToString(mathContent, {
+                            throwOnError: false,
+                            displayMode: false,
+                            strict: (errorCode: string) =>
+                                errorCode === 'unicodeTextInMathMode' ? 'ignore' : 'warn',
+                            trust: true,
+                        });
+                        mathElement.innerHTML = html;
+                        mathElement.setAttribute('data-math-rendered', 'true');
+                    }
+                } catch (error) {
+                    console.error('Render inline math error:', error, mathElement);
+                    mathElement.setAttribute('data-math-rendered', 'true');
+                }
+            });
+
+            // 处理新格式的块级数学公式 div.language-math
+            const blockMathElements = element.querySelectorAll(
+                'div.language-math:not([data-math-rendered])'
+            );
+
+            blockMathElements.forEach((mathElement: HTMLElement) => {
+                try {
+                    // 获取数学公式内容（从 textContent 获取）
+                    const mathContent = mathElement.textContent?.trim();
+                    if (mathContent) {
+                        const html = katex.renderToString(mathContent, {
+                            throwOnError: false,
+                            displayMode: true,
+                            strict: (errorCode: string) =>
+                                errorCode === 'unicodeTextInMathMode' ? 'ignore' : 'warn',
+                            trust: true,
+                        });
+                        mathElement.innerHTML = html;
+                        mathElement.setAttribute('data-math-rendered', 'true');
+                    }
+                } catch (error) {
+                    console.error('Render block math error:', error, mathElement);
+                    mathElement.setAttribute('data-math-rendered', 'true');
+                }
+            });
+
+            // 兼容旧格式：处理 Lute 渲染的数学公式元素（带 data-subtype="math" 属性）
+            const oldMathElements = element.querySelectorAll(
                 '[data-subtype="math"]:not([data-math-rendered])'
             );
 
-            mathElements.forEach((mathElement: HTMLElement) => {
+            oldMathElements.forEach((mathElement: HTMLElement) => {
                 try {
                     // 获取数学公式内容
                     const mathContent = mathElement.getAttribute('data-content');
@@ -2416,12 +2469,12 @@
                 }
             });
 
-            // 处理可能遗漏的行内数学公式 span.katex
-            const inlineMathElements = element.querySelectorAll(
+            // 兼容旧格式：处理 span.katex
+            const oldInlineMathElements = element.querySelectorAll(
                 'span.katex:not([data-math-rendered])'
             );
 
-            inlineMathElements.forEach((mathElement: HTMLElement) => {
+            oldInlineMathElements.forEach((mathElement: HTMLElement) => {
                 try {
                     const mathContent = mathElement.getAttribute('data-content');
                     if (mathContent) {
@@ -2441,12 +2494,12 @@
                 }
             });
 
-            // 处理可能遗漏的块级数学公式 div.katex
-            const blockMathElements = element.querySelectorAll(
+            // 兼容旧格式：处理 div.katex
+            const oldBlockMathElements = element.querySelectorAll(
                 'div.katex:not([data-math-rendered])'
             );
 
-            blockMathElements.forEach((mathElement: HTMLElement) => {
+            oldBlockMathElements.forEach((mathElement: HTMLElement) => {
                 try {
                     const mathContent = mathElement.getAttribute('data-content');
                     if (mathContent) {
@@ -2470,7 +2523,7 @@
         }
     }
 
-    // 清理代码块中不需要的元素
+    // 清理代码块中不需要的元素并添加语言标签和复制按钮
     function cleanupCodeBlocks(element: HTMLElement) {
         if (!element) return;
 
@@ -2486,6 +2539,77 @@
                 const copyButtons = element.querySelectorAll('.protyle-action__copy');
                 copyButtons.forEach((btn: HTMLElement) => {
                     btn.classList.remove('b3-tooltips__nw', 'b3-tooltips');
+                });
+
+                // 为代码块添加语言标签和复制按钮
+                const codeBlocks = element.querySelectorAll('pre > code[class*="language-"]');
+                codeBlocks.forEach((codeElement: HTMLElement) => {
+                    const pre = codeElement.parentElement;
+                    if (!pre || pre.hasAttribute('data-lang-added')) return;
+
+                    // 从 class 中提取语言名称
+                    const classes = codeElement.className.split(' ');
+                    let language = '';
+                    for (const cls of classes) {
+                        if (cls.startsWith('language-')) {
+                            language = cls.replace('language-', '');
+                            break;
+                        }
+                    }
+
+                    if (language) {
+                        // 标记已处理
+                        pre.setAttribute('data-lang-added', 'true');
+
+                        // 创建工具栏容器
+                        const toolbar = document.createElement('div');
+                        toolbar.className = 'code-block-toolbar';
+
+                        // 创建语言标签
+                        const langLabel = document.createElement('div');
+                        langLabel.className = 'code-block-lang-label';
+                        langLabel.textContent = language;
+
+                        // 创建复制按钮
+                        const copyButton = document.createElement('button');
+                        copyButton.className = 'code-block-copy-btn';
+                        copyButton.innerHTML = '<svg><use xlink:href="#iconCopy"></use></svg>';
+                        copyButton.title = '复制代码';
+
+                        // 添加复制功能
+                        copyButton.addEventListener('click', () => {
+                            const code = codeElement.textContent || '';
+                            navigator.clipboard
+                                .writeText(code)
+                                .then(() => {
+                                    // 显示复制成功提示
+                                    pushMsg('已复制');
+                                    // 更新按钮图标
+                                    copyButton.innerHTML =
+                                        '<svg><use xlink:href="#iconCheck"></use></svg>';
+                                    copyButton.classList.add('copied');
+                                    setTimeout(() => {
+                                        copyButton.innerHTML =
+                                            '<svg><use xlink:href="#iconCopy"></use></svg>';
+                                        copyButton.classList.remove('copied');
+                                    }, 2000);
+                                })
+                                .catch(err => {
+                                    console.error('Copy failed:', err);
+                                    pushErrMsg('复制失败');
+                                });
+                        });
+
+                        // 组装工具栏
+                        toolbar.appendChild(langLabel);
+                        toolbar.appendChild(copyButton);
+
+                        // 设置 pre 为相对定位
+                        pre.style.position = 'relative';
+
+                        // 将工具栏插入到 pre 的开头
+                        pre.insertBefore(toolbar, pre.firstChild);
+                    }
                 });
             } catch (error) {
                 console.error('Cleanup code blocks error:', error);
@@ -2544,11 +2668,16 @@
     // 监听消息变化，高亮代码块和渲染数学公式
     $: {
         if (messages.length > 0 || streamingMessage) {
-            tick().then(() => {
+            tick().then(async () => {
                 if (messagesContainer) {
+                    // 先高亮代码块
                     highlightCodeBlocks(messagesContainer);
-                    renderMathFormulas(messagesContainer);
+                    // 等待一个 tick 确保高亮完成
+                    await tick();
+                    // 然后添加工具栏（不会影响已有的高亮）
                     cleanupCodeBlocks(messagesContainer);
+                    // 渲染数学公式和设置块引用链接
+                    renderMathFormulas(messagesContainer);
                     setupBlockRefLinks(messagesContainer);
                 }
             });
@@ -2613,7 +2742,7 @@
             // 使用思源的 Lute 将 HTML 转换为 Markdown
             if (window.Lute) {
                 const lute = window.Lute.New();
-                const markdown = lute.BlockDOM2StdMd(html);
+                const markdown = lute.HTML2Markdown(html);
 
                 // 将Markdown写入剪贴板
                 event.clipboardData?.setData('text/plain', markdown);
@@ -6758,6 +6887,8 @@
         line-height: 1.6;
         max-height: 400px;
         overflow-y: auto;
+        user-select: text; // 允许鼠标选择文本进行复制
+        cursor: text; // 显示文本选择光标
 
         &.ai-message__thinking-content--streaming {
             animation: fadeIn 0.3s ease-out;
@@ -6896,6 +7027,8 @@
         overflow-x: auto;
         max-height: 300px;
         overflow-y: auto;
+        user-select: text; // 允许鼠标选择文本进行复制
+        cursor: text; // 显示文本选择光标
     }
 
     .ai-message__tool-result-placeholder {
@@ -6915,6 +7048,8 @@
         line-height: 1.6;
         word-wrap: break-word;
         overflow-x: auto;
+        user-select: text; // 允许鼠标选择文本进行复制
+        cursor: text; // 显示文本选择光标
 
         // 使用protyle-wysiwyg样式，支持思源的富文本渲染
         &.protyle-wysiwyg {
@@ -9269,6 +9404,110 @@
 
         .ai-sidebar__multi-model-tab-panel-content {
             max-height: 400px;
+        }
+    }
+
+    // 代码块工具栏样式
+    :global(.code-block-toolbar) {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 12px;
+        background: var(--b3-theme-surface);
+        border-bottom: 1px solid var(--b3-border-color);
+        z-index: 1;
+    }
+
+    // 代码块语言标签样式（左上角）
+    :global(.code-block-lang-label) {
+        font-size: 12px;
+        color: var(--b3-theme-on-surface-light);
+        font-family: var(--b3-font-family-code);
+        line-height: 1.2;
+        user-select: none;
+        font-weight: 500;
+    }
+
+    // 代码块复制按钮样式
+    :global(.code-block-copy-btn) {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 12px;
+        height: 12px;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: var(--b3-theme-on-surface-light);
+        cursor: pointer;
+        border-radius: 4px;
+        transition: all 0.2s;
+
+        svg {
+            width: 14px;
+            height: 14px;
+        }
+
+        &:hover {
+            background: var(--b3-list-hover);
+            color: var(--b3-theme-on-surface);
+        }
+
+        &.copied {
+            color: var(--b3-theme-primary);
+        }
+    }
+
+    // 代码块容器样式
+    :global(.ai-message__content pre) {
+        position: relative;
+        margin: 8px 0;
+        padding: 0 !important;
+        border-radius: 6px;
+        background: var(--b3-theme-surface);
+        border: 1px solid var(--b3-border-color);
+        box-shadow: var(--b3-tooltips-shadow);
+        overflow: hidden;
+        max-height: 600px; /* 限制代码块最大高度 */
+        display: flex;
+        flex-direction: column;
+
+        code {
+            display: block;
+            padding: 12px !important; /* 代码内容的内边距 */
+            margin: 0;
+            margin-top: 37px; /* 为固定的工具栏留出空间 */
+            overflow: auto; /* 启用滚动 */
+            flex: 1;
+            min-height: 0;
+            font-family: var(--b3-font-family-code);
+            font-size: 0.9em;
+            line-height: 1.5;
+            background: transparent !important;
+
+            /* 自定义滚动条 */
+            &::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+
+            &::-webkit-scrollbar-track {
+                background: var(--b3-theme-background);
+                border-radius: 4px;
+            }
+
+            &::-webkit-scrollbar-thumb {
+                background: var(--b3-scroll-color);
+                border-radius: 4px;
+
+                &:hover {
+                    background: var(--b3-theme-on-surface-light);
+                }
+            }
         }
     }
 </style>
