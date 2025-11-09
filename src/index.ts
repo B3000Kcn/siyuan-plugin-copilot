@@ -129,23 +129,47 @@ export default class PluginSample extends Plugin {
      * 打开AI聊天对话框
      */
     private async openChatDialog(protyle: any) {
-        // 获取选中的文本
-        let selectedText = '';
+        // 获取选中的内容（优先获取HTML，然后转换为Markdown）
+        let selectedMarkdown = '';
 
         try {
             // 尝试获取选中的内容
             const selection = window.getSelection();
-            if (selection && selection.toString().trim()) {
-                selectedText = selection.toString().trim();
-            } else if (protyle?.wysiwyg?.element) {
-                // 如果没有选中，尝试获取光标所在块的内容
+            if (selection && selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                if (!range.collapsed) {
+                    // 如果有选区，获取选中的HTML内容
+                    const div = document.createElement('div');
+                    div.appendChild(range.cloneContents());
+                    const selectedHtml = div.innerHTML;
+                    
+                    // 使用Lute将HTML转换为Markdown
+                    if (typeof window !== 'undefined' && (window as any).Lute) {
+                        const lute = (window as any).Lute.New();
+                        selectedMarkdown = lute.HTML2Md(selectedHtml);
+                    } else {
+                        // 如果Lute不可用，使用纯文本作为降级方案
+                        selectedMarkdown = selection.toString().trim();
+                    }
+                }
+            }
+            
+            // 如果没有选中内容或转换失败，尝试获取光标所在块的内容
+            if (!selectedMarkdown && protyle?.wysiwyg?.element) {
                 const focusElement = protyle.wysiwyg.element.querySelector('.protyle-wysiwyg--hl');
                 if (focusElement) {
-                    selectedText = focusElement.textContent || '';
+                    // 获取整个块的HTML并转换为Markdown
+                    const blockHtml = focusElement.innerHTML;
+                    if (typeof window !== 'undefined' && (window as any).Lute) {
+                        const lute = (window as any).Lute.New();
+                        selectedMarkdown = lute.HTML2Md(blockHtml);
+                    } else {
+                        selectedMarkdown = focusElement.textContent || '';
+                    }
                 }
             }
         } catch (error) {
-            console.error('Failed to get selected text:', error);
+            console.error('Failed to get selected content:', error);
         }
 
         // 生成唯一的对话框ID
@@ -172,7 +196,7 @@ export default class PluginSample extends Plugin {
             target: dialog.element.querySelector(`#${dialogId}`),
             props: {
                 plugin: this,
-                initialMessage: selectedText ? `> ${selectedText}\n\n` : ''
+                initialMessage: selectedMarkdown ? `> ${selectedMarkdown}\n\n` : ''
             }
         });
 
