@@ -74,6 +74,11 @@ export default class PluginSample extends Plugin {
             }
         });
 
+    }
+
+    async onLayoutReady() {
+        //布局加载完成的时候,会自动调用这个函数
+
         // 注册AI侧栏
         this.addDock({
             config: {
@@ -100,11 +105,6 @@ export default class PluginSample extends Plugin {
                 }
             }
         });
-    }
-
-    async onLayoutReady() {
-        //布局加载完成的时候,会自动调用这个函数
-
     }
 
     /**
