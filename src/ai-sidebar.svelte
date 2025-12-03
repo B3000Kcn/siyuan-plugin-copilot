@@ -517,7 +517,9 @@
                     stream: true,
                     signal: localAbort.signal,
                     customBody,
-                    enableThinking: modelConfig.capabilities?.thinking || false,
+                    enableThinking:
+                        modelConfig.capabilities?.thinking &&
+                        (modelConfig.thinkingEnabled || false),
                     onThinkingChunk: async (chunk: string) => {
                         thinking += chunk;
                         msg.multiModelResponses[responseIndex].thinking = thinking;
@@ -586,6 +588,7 @@
         isLoading: boolean;
         error?: string;
         thinkingCollapsed?: boolean;
+        thinkingEnabled?: boolean; // 用户是否开启思考模式（从 provider 配置获取）
     }> = []; // 多模型响应
     let isWaitingForAnswerSelection = false; // 是否在等待用户选择答案
     let selectedAnswerIndex: number | null = null; // 用户选择的答案索引
@@ -1066,6 +1069,36 @@
         }
     }
 
+    // 处理多模型中模型的思考模式切换
+    function handleToggleModelThinking(
+        event: CustomEvent<{ provider: string; modelId: string; enabled: boolean }>
+    ) {
+        const { provider, modelId, enabled } = event.detail;
+
+        // 查找并更新 provider 中对应模型的 thinkingEnabled 设置
+        let providerConfig: any = null;
+
+        // 检查是否是内置平台
+        if (providers[provider] && !Array.isArray(providers[provider])) {
+            providerConfig = providers[provider];
+        } else if (providers.customProviders && Array.isArray(providers.customProviders)) {
+            // 检查是否是自定义平台
+            providerConfig = providers.customProviders.find((p: any) => p.id === provider);
+        }
+
+        if (providerConfig && providerConfig.models) {
+            const model = providerConfig.models.find((m: any) => m.id === modelId);
+            if (model) {
+                model.thinkingEnabled = enabled;
+                // 触发响应式更新
+                providers = { ...providers };
+                // 保存设置
+                settings.aiProviders = providers;
+                plugin.saveSettings(settings);
+            }
+        }
+    }
+
     // 处理模型设置应用
     function handleApplyModelSettings(
         event: CustomEvent<{
@@ -1101,6 +1134,167 @@
             return null;
         }
         return providerConfig.models.find((m: any) => m.id === currentModelId);
+    }
+
+    // 思考模式状态（响应式）
+    // 确保追踪 currentProvider、currentModelId 和 providers 的变化
+    $: isThinkingModeEnabled = (() => {
+        // 确保读取最新的 providers 数据
+        if (!currentProvider || !currentModelId) {
+            return false;
+        }
+
+        // 从 settings 中读取最新的配置，确保数据是最新的
+        const providerConfig = (() => {
+            // 检查是否是自定义平台
+            const customProvider = settings.aiProviders?.customProviders?.find(
+                (p: any) => p.id === currentProvider
+            );
+            if (customProvider) {
+                return customProvider;
+            }
+
+            // 检查是否是内置平台
+            if (settings.aiProviders?.[currentProvider]) {
+                return settings.aiProviders[currentProvider];
+            }
+
+            // 回退到 providers 对象
+            if (providers[currentProvider] && !Array.isArray(providers[currentProvider])) {
+                return providers[currentProvider];
+            }
+
+            if (providers.customProviders && Array.isArray(providers.customProviders)) {
+                return providers.customProviders.find((p: any) => p.id === currentProvider);
+            }
+
+            return null;
+        })();
+
+        if (!providerConfig) {
+            return false;
+        }
+
+        const modelConfig = providerConfig.models?.find((m: any) => m.id === currentModelId);
+        // 只有当模型支持思考能力时，才返回 thinkingEnabled 的值
+        return modelConfig?.capabilities?.thinking ? modelConfig.thinkingEnabled || false : false;
+    })();
+
+    // 是否显示思考模式按钮（只有支持思考的模型才显示）
+    $: showThinkingToggle = (() => {
+        if (!currentProvider || !currentModelId) {
+            return false;
+        }
+
+        const providerConfig = (() => {
+            const customProvider = settings.aiProviders?.customProviders?.find(
+                (p: any) => p.id === currentProvider
+            );
+            if (customProvider) {
+                return customProvider;
+            }
+
+            if (settings.aiProviders?.[currentProvider]) {
+                return settings.aiProviders[currentProvider];
+            }
+
+            if (providers[currentProvider] && !Array.isArray(providers[currentProvider])) {
+                return providers[currentProvider];
+            }
+
+            if (providers.customProviders && Array.isArray(providers.customProviders)) {
+                return providers.customProviders.find((p: any) => p.id === currentProvider);
+            }
+
+            return null;
+        })();
+
+        if (!providerConfig) {
+            return false;
+        }
+
+        const modelConfig = providerConfig.models?.find((m: any) => m.id === currentModelId);
+        return modelConfig?.capabilities?.thinking || false;
+    })();
+
+    // 切换思考模式
+    async function toggleThinkingMode() {
+        if (!currentProvider || !currentModelId) {
+            return;
+        }
+
+        const modelConfig = getCurrentModelConfig();
+        if (!modelConfig) {
+            return;
+        }
+
+        // 确保 capabilities 对象存在
+        if (!modelConfig.capabilities) {
+            modelConfig.capabilities = {};
+        }
+
+        // 只有当模型支持思考能力时，才能切换
+        if (!modelConfig.capabilities.thinking) {
+            return;
+        }
+
+        // 切换思考模式启用状态
+        modelConfig.thinkingEnabled = !modelConfig.thinkingEnabled;
+
+        // 获取提供商配置
+        const providerConfig = getCurrentProviderConfig();
+        if (!providerConfig) {
+            return;
+        }
+
+        // 找到模型在数组中的索引并更新
+        const modelIndex = providerConfig.models.findIndex((m: any) => m.id === currentModelId);
+        if (modelIndex !== -1) {
+            providerConfig.models[modelIndex] = { ...modelConfig };
+            providerConfig.models = [...providerConfig.models];
+        }
+
+        // 更新 settings 并保存
+        // 检查是否是自定义平台（通过检查 customProviders 数组）
+        const isCustomProvider =
+            settings.aiProviders.customProviders?.some((p: any) => p.id === currentProvider) ||
+            false;
+
+        if (isCustomProvider) {
+            // 自定义平台：更新 customProviders 数组
+            const customProviders = settings.aiProviders.customProviders || [];
+            const customProviderIndex = customProviders.findIndex(
+                (p: any) => p.id === currentProvider
+            );
+            if (customProviderIndex !== -1) {
+                customProviders[customProviderIndex] = { ...providerConfig };
+                settings = {
+                    ...settings,
+                    aiProviders: {
+                        ...settings.aiProviders,
+                        customProviders: [...customProviders],
+                    },
+                };
+            }
+        } else {
+            // 内置平台：直接更新
+            settings = {
+                ...settings,
+                aiProviders: {
+                    ...settings.aiProviders,
+                    [currentProvider]: providerConfig,
+                },
+            };
+        }
+
+        // 更新 providers 对象以触发响应式更新
+        providers = {
+            ...providers,
+            [currentProvider]: providerConfig,
+        };
+
+        // 保存设置（settings 已经在上面更新过了）
+        await plugin.saveSettings(settings);
     }
 
     // 获取指定提供商和模型的配置
@@ -1193,6 +1387,7 @@
                 thinking: '',
                 isLoading: true,
                 thinkingCollapsed: false,
+                thinkingEnabled: config?.modelConfig?.thinkingEnabled || false,
             };
         });
 
@@ -1235,7 +1430,9 @@
                         maxTokens: modelConfig.maxTokens > 0 ? modelConfig.maxTokens : undefined,
                         stream: true,
                         signal: abortController.signal,
-                        enableThinking: modelConfig.capabilities?.thinking || false,
+                        enableThinking:
+                            modelConfig.capabilities?.thinking &&
+                            (modelConfig.thinkingEnabled || false),
                         customBody, // 传递自定义参数
                         onThinkingChunk: async (chunk: string) => {
                             thinking += chunk;
@@ -2114,7 +2311,8 @@
 
         try {
             // 检查是否启用思考模式
-            const enableThinking = modelConfig.capabilities?.thinking || false;
+            const enableThinking =
+                modelConfig.capabilities?.thinking && (modelConfig.thinkingEnabled || false);
 
             // 准备 Agent 模式的工具列表
             let toolsForAgent: any[] | undefined = undefined;
@@ -5488,7 +5686,8 @@
         }
 
         try {
-            const enableThinking = modelConfig.capabilities?.thinking || false;
+            const enableThinking =
+                modelConfig.capabilities?.thinking && (modelConfig.thinkingEnabled || false);
 
             await chat(
                 currentProvider,
@@ -6805,6 +7004,7 @@
                         bind:enableMultiModel
                         on:change={handleMultiModelChange}
                         on:toggleEnable={handleToggleMultiModel}
+                        on:toggleThinking={handleToggleModelThinking}
                     />
                 </div>
             {/if}
@@ -6896,13 +7096,28 @@
                 {plugin}
             />
             {#if !(chatMode === 'ask' && enableMultiModel)}
-                <div class="ai-sidebar__model-selector-container">
-                    <ModelSelector
-                        {providers}
-                        {currentProvider}
-                        {currentModelId}
-                        on:select={handleModelSelect}
-                    />
+                <div class="ai-sidebar__model-selector-wrapper">
+                    {#if showThinkingToggle}
+                        <div class="ai-sidebar__thinking-toggle-container">
+                            <button
+                                class="ai-sidebar__thinking-toggle b3-button b3-button--text"
+                                class:ai-sidebar__thinking-toggle--active={isThinkingModeEnabled}
+                                on:click={toggleThinkingMode}
+                                title={isThinkingModeEnabled ? '思考模式已启用' : '思考模式已禁用'}
+                                disabled={!currentProvider || !currentModelId}
+                            >
+                                思考
+                            </button>
+                        </div>
+                    {/if}
+                    <div class="ai-sidebar__model-selector-container">
+                        <ModelSelector
+                            {providers}
+                            {currentProvider}
+                            {currentModelId}
+                            on:select={handleModelSelect}
+                        />
+                    </div>
                 </div>
             {/if}
         </div>
@@ -8229,6 +8444,42 @@
         align-items: center;
         gap: 4px;
         flex-shrink: 0;
+    }
+
+    .ai-sidebar__model-selector-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+        flex-shrink: 0;
+    }
+
+    .ai-sidebar__thinking-toggle-container {
+        flex-shrink: 0;
+    }
+
+    .ai-sidebar__thinking-toggle {
+        font-size: 12px;
+        padding: 4px 8px;
+        min-width: auto;
+        transition: all 0.2s;
+        color: var(--b3-theme-primary);
+        background: transparent;
+    }
+
+    .ai-sidebar__thinking-toggle:hover:not(:disabled) {
+        background: var(--b3-theme-surface);
+    }
+
+    .ai-sidebar__thinking-toggle--active {
+        color: var(--b3-theme-primary);
+        background: var(--b3-theme-primary-lightest);
+        font-weight: 600;
+    }
+
+    .ai-sidebar__thinking-toggle:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
     .ai-sidebar__model-selector-container {
