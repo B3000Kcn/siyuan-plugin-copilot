@@ -348,26 +348,13 @@
     });
 
     // 计算当前按钮上要显示的预设名称
-    // 优先使用 selectedPresetId 命中的预设，其次根据当前临时参数反推匹配的预设
-    // 若均无匹配，则显示“自定义”以提示当前是临时配置
+    // 仅在显式选中某个预设（`selectedPresetId`）时显示其名称
     $: currentPresetName = (() => {
-        // 有显式选中的预设
         if (selectedPresetId) {
             const preset = presets.find(p => p.id === selectedPresetId);
             if (preset) return preset.name;
         }
-
-        // 无选中 ID，但当前临时参数与某个预设完全一致
-        const matched = presets.find(
-            p =>
-                p.contextCount === tempContextCount &&
-                p.temperature === tempTemperature &&
-                p.systemPrompt === tempSystemPrompt
-        );
-        if (matched) return matched.name;
-
-        // 与任何预设都不一致
-        return presets.length > 0 ? t('aiSidebar.modelSettings.customPreset') || '自定义' : '';
+        return '';
     })();
 </script>
 
