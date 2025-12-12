@@ -594,7 +594,7 @@
         text-overflow: ellipsis;
         white-space: nowrap;
         font-size: 12px;
-        color: var(--b3-theme-on-surface);
+        /* 不强制设置颜色，继承父级按钮的文本颜色 */
     }
 
     .model-settings-dropdown {
