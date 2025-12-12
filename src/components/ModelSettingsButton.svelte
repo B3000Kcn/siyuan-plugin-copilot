@@ -346,16 +346,44 @@
             }
         }
     });
+
+    // 计算当前按钮上要显示的预设名称
+    // 优先使用 selectedPresetId 命中的预设，其次根据当前临时参数反推匹配的预设
+    // 若均无匹配，则显示“自定义”以提示当前是临时配置
+    $: currentPresetName = (() => {
+        // 有显式选中的预设
+        if (selectedPresetId) {
+            const preset = presets.find(p => p.id === selectedPresetId);
+            if (preset) return preset.name;
+        }
+
+        // 无选中 ID，但当前临时参数与某个预设完全一致
+        const matched = presets.find(
+            p =>
+                p.contextCount === tempContextCount &&
+                p.temperature === tempTemperature &&
+                p.systemPrompt === tempSystemPrompt
+        );
+        if (matched) return matched.name;
+
+        // 与任何预设都不一致
+        return presets.length > 0 ? t('aiSidebar.modelSettings.customPreset') || '自定义' : '';
+    })();
 </script>
 
 <div class="model-settings-button">
     <button
         bind:this={buttonElement}
-        class="b3-button b3-button--text"
+        class="b3-button b3-button--text model-settings-button__trigger"
         on:click|stopPropagation={toggleDropdown}
-        title={t('aiSidebar.modelSettings.title')}
+        title={currentPresetName || t('aiSidebar.modelSettings.title')}
     >
         <svg class="b3-button__icon"><use xlink:href="#iconEdit"></use></svg>
+        {#if currentPresetName}
+            <span class="model-settings-button__label">
+                {currentPresetName}
+            </span>
+        {/if}
     </button>
 
     {#if isOpen}
@@ -550,6 +578,23 @@
 <style lang="scss">
     .model-settings-button {
         position: relative;
+    }
+
+    .model-settings-button__trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        max-width: 200px;
+        padding-inline: 6px 8px;
+    }
+
+    .model-settings-button__label {
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+        color: var(--b3-theme-on-surface);
     }
 
     .model-settings-dropdown {
